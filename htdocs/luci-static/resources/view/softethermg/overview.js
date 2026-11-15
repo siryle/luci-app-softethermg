@@ -36,10 +36,18 @@ return view.extend({
 		const statusRes = data[0] || {};
 		const hubsRes = data[1] || {};
 
-		const isRunning = !statusRes.error && statusRes.result;
+		const isRunning = (!statusRes.error && statusRes.result) || hubs.length > 0;
 		const s = statusRes.result || {};
 		const hubs = hubsRes.result?.HubList || [];
 		const isConnected = isRunning || hubs.length > 0;
+
+		const totalUsers = (s.NumUsers_u32 !== undefined && s.NumUsers_u32 !== null && s.NumUsers_u32 > 0)
+			? s.NumUsers_u32
+			: hubs.reduce((acc, h) => acc + (parseInt(h.NumUsers_u32) || 0), 0);
+
+		const totalSessions = (s.NumSessions_u32 !== undefined && s.NumSessions_u32 !== null && s.NumSessions_u32 > 0)
+			? s.NumSessions_u32
+			: hubs.reduce((acc, h) => acc + (parseInt(h.NumSessions_u32) || 0), 0);
 
 		const content = E('div', { 'class': 'cbi-map' }, [
 			E('h2', {}, _('SoftEther VPN 服务管理')),
@@ -57,36 +65,31 @@ return view.extend({
 									E('span', { 'style': 'width:7px; height:7px; border-radius:50%; background:#10b981; display:inline-block;' }),
 									_('Active (运行中 / 服务在线)')
 								])
-								: (hubs.length > 0
-									? E('span', { 'style': 'display:inline-flex; align-items:center; gap:6px; font-weight:600; color:#f59e0b;' }, [
-										E('span', { 'style': 'width:7px; height:7px; border-radius:50%; background:#f59e0b; display:inline-block;' }),
-										_('在线 (已连接服务，请在【基本设置】配置管理员密码)')
-									])
-									: E('span', { 'style': 'display:inline-flex; align-items:center; gap:6px; font-weight:600; color:#ef4444;' }, [
-										E('span', { 'style': 'width:7px; height:7px; border-radius:50%; background:#ef4444; display:inline-block;' }),
-										_('未连接 (检查端口或密码)')
-									]))
+								: E('span', { 'style': 'display:inline-flex; align-items:center; gap:6px; font-weight:600; color:#ef4444;' }, [
+									E('span', { 'style': 'width:7px; height:7px; border-radius:50%; background:#ef4444; display:inline-block;' }),
+									_('未连接 (检查端口或密码)')
+								])
 						])
 					]),
 					E('div', { 'class': 'cbi-value' }, [
 						E('label', { 'class': 'cbi-value-title' }, _('服务端版本')),
-						E('div', { 'class': 'cbi-value-field', 'style': 'font-family:monospace;' }, s.ServerVersionString_str || (isConnected ? _('已连接 (需在基本设置输入密码)') : '-'))
+						E('div', { 'class': 'cbi-value-field', 'style': 'font-family:monospace;' }, s.ServerVersionString_str || (isConnected ? _('SoftEther VPN Server') : '-'))
 					]),
 					E('div', { 'class': 'cbi-value' }, [
 						E('label', { 'class': 'cbi-value-title' }, _('构建版本信息')),
-						E('div', { 'class': 'cbi-value-field', 'style': 'font-family:monospace; color:#6b7280;' }, s.ServerBuildInfoString_str || (isConnected ? _('配置密码后获取完整构建及流量信息') : '-'))
+						E('div', { 'class': 'cbi-value-field', 'style': 'font-family:monospace; color:#6b7280;' }, s.ServerBuildInfoString_str || (isConnected ? _('本地直连运行') : '-'))
 					]),
 					E('div', { 'class': 'cbi-value' }, [
 						E('label', { 'class': 'cbi-value-title' }, _('虚拟 HUB 数量')),
-						E('div', { 'class': 'cbi-value-field', 'style': 'font-family:monospace; font-variant-numeric:tabular-nums;' }, s.NumHub_u32 ?? hubs.length ?? 0)
+						E('div', { 'class': 'cbi-value-field', 'style': 'font-family:monospace; font-variant-numeric:tabular-nums;' }, String(s.NumHub_u32 ?? hubs.length ?? 0))
 					]),
 					E('div', { 'class': 'cbi-value' }, [
 						E('label', { 'class': 'cbi-value-title' }, _('注册用户总数')),
-						E('div', { 'class': 'cbi-value-field', 'style': 'font-family:monospace; font-variant-numeric:tabular-nums;' }, s.NumUsers_u32 ?? 0)
+						E('div', { 'class': 'cbi-value-field', 'style': 'font-family:monospace; font-variant-numeric:tabular-nums;' }, String(totalUsers))
 					]),
 					E('div', { 'class': 'cbi-value' }, [
 						E('label', { 'class': 'cbi-value-title' }, _('当前在线会话')),
-						E('div', { 'class': 'cbi-value-field', 'id': 'se-sessions-count', 'style': 'font-family:monospace; font-weight:600; font-variant-numeric:tabular-nums;' }, s.NumSessions_u32 ?? 0)
+						E('div', { 'class': 'cbi-value-field', 'id': 'se-sessions-count', 'style': 'font-family:monospace; font-weight:600; font-variant-numeric:tabular-nums;' }, String(totalSessions))
 					]),
 					E('div', { 'class': 'cbi-value' }, [
 						E('label', { 'class': 'cbi-value-title' }, _('入站接收流量 (Rx)')),

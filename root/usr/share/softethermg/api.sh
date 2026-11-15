@@ -62,11 +62,7 @@ run_vpncmd() {
 	pass=$(get_admin_password)
 
 	local args="${host}:${port} /SERVER"
-	if [ -n "$pass" ]; then
-		args="$args /PASSWORD:${pass}"
-	else
-		args="$args /PASSWORD:\"\""
-	fi
+	[ -n "$pass" ] && args="$args /PASSWORD:${pass}"
 	[ -n "$hub" ] && args="$args /HUB:${hub}"
 
 	local vcmd_dir
@@ -85,21 +81,36 @@ run_vpncmd() {
 
 # --- Server Status via vpncmd ---
 cmd_get_server_status() {
-	local raw info_raw
+	local raw info_raw banner
 	raw=$(run_vpncmd "" "ServerStatusGet" 2>/dev/null)
 	info_raw=$(run_vpncmd "" "ServerInfoGet" 2>/dev/null)
-	if [ -z "$raw" ] && [ -z "$info_raw" ]; then
+
+	# 获取本地 vpncmd 原生版本横幅作为可靠保底（免网络、免鉴权）
+	local vcmd vcmd_dir
+	vcmd=$(find_vpncmd)
+	if [ -f "$vcmd" ]; then
+		vcmd_dir="$(dirname "$vcmd")"
+		banner=$( (cd "$vcmd_dir" && "$vcmd" /? < /dev/null 2>&1) | head -n 10 )
+	fi
+
+	if [ -z "$raw" ] && [ -z "$info_raw" ] && [ -z "$banner" ]; then
 		echo '{"jsonrpc":"2.0","error":{"code":-32000,"message":"vpncmd execution failed or server unreachable"},"id":"1"}'
 		return 1
 	fi
 
-	printf '%s\n%s\n' "$raw" "$info_raw" | awk '
+	printf '%s\n%s\n%s\n' "$raw" "$info_raw" "$banner" | awk '
 	BEGIN {
 		print "{\"jsonrpc\":\"2.0\",\"result\":{"
 		first = 1
 	}
 	{
 		sub(/\r$/, "")
+		if ($0 ~ /^[Vv]ersion / && ver == "") {
+			ver = $0
+		}
+		if ($0 ~ /^[Cc]ompiled / && build == "") {
+			build = $0
+		}
 		idx = index($0, ",")
 		if (idx > 0) {
 			k = substr($0, 1, idx - 1)
@@ -107,35 +118,38 @@ cmd_get_server_status() {
 			gsub(/^"|"$/, "", k)
 			gsub(/^"|"$/, "", v)
 
-			jk = ""
-			if (k == "Server Type") jk = "ServerType_str"
-			else if (k == "Server Version String" || k == "Version") jk = "ServerVersionString_str"
-			else if (k == "Server Build Info String" || k == "Build") jk = "ServerBuildInfoString_str"
-			else if (k == "Product Name") jk = "ProductName_str"
-			else if (k == "Number of Virtual Hubs") jk = "NumHub_u32"
-			else if (k == "Number of Sessions") jk = "NumSessions_u32"
-			else if (k == "Number of Users") jk = "NumUsers_u32"
+			if (k == "Server Version String" || k == "Version") ver = v
+			else if (k == "Server Build Info String" || k == "Build") build = v
+			else if (k == "Product Name") prod = v
+			else if (k == "Server Type") type = v
+			else if (k == "Number of Virtual Hubs") num_hub = v
+			else if (k == "Number of Sessions") num_sessions = v
+			else if (k == "Number of Users") num_users = v
 			else if (k ~ /Incoming.*Total Size/ || k ~ /Total Size of Incoming.*Packets/) {
 				gsub(/[^0-9]/, "", v)
-				jk = "Recv.BroadcastBytes_u64"
+				rx = v
 			}
 			else if (k ~ /Outgoing.*Total Size/ || k ~ /Total Size of Outgoing.*Packets/) {
 				gsub(/[^0-9]/, "", v)
-				jk = "Send.BroadcastBytes_u64"
-			}
-
-			if (jk != "" && !seen[jk]++) {
-				if (!first) printf ","
-				first = 0
-				if (jk ~ /_u32$/ || jk ~ /_u64$/) {
-					printf "\"%s\":%d", jk, (v==""?0:v)
-				} else {
-					printf "\"%s\":\"%s\"", jk, v
-				}
+				tx = v
 			}
 		}
 	}
 	END {
+		gsub(/"/, "", ver)
+		gsub(/"/, "", build)
+		gsub(/"/, "", prod)
+		gsub(/"/, "", type)
+
+		if (ver != "") { printf "\"ServerVersionString_str\":\"%s\"", ver; first = 0 }
+		if (build != "") { if (!first) printf ","; printf "\"ServerBuildInfoString_str\":\"%s\"", build; first = 0 }
+		if (prod != "") { if (!first) printf ","; printf "\"ProductName_str\":\"%s\"", prod; first = 0 }
+		if (type != "") { if (!first) printf ","; printf "\"ServerType_str\":\"%s\"", type; first = 0 }
+		if (num_hub != "") { if (!first) printf ","; printf "\"NumHub_u32\":%d", num_hub; first = 0 }
+		if (num_users != "") { if (!first) printf ","; printf "\"NumUsers_u32\":%d", num_users; first = 0 }
+		if (num_sessions != "") { if (!first) printf ","; printf "\"NumSessions_u32\":%d", num_sessions; first = 0 }
+		if (rx != "") { if (!first) printf ","; printf "\"Recv.BroadcastBytes_u64\":%s", rx; first = 0 }
+		if (tx != "") { if (!first) printf ","; printf "\"Send.BroadcastBytes_u64\":%s", tx; first = 0 }
 		print "},\"id\":\"1\"}"
 	}'
 }
@@ -173,10 +187,10 @@ cmd_enum_hubs() {
 			v = substr($0, idx + 1)
 			gsub(/^"|"$/, "", k)
 			gsub(/^"|"$/, "", v)
-			if (k == "Virtual Hub Name") cur_name = v
+			if (k == "Virtual Hub Name" || k ~ /Hub Name/) cur_name = v
 			else if (k == "Status") cur_online = v
-			else if (k == "Users") cur_users = v
-			else if (k == "Sessions") cur_sessions = v
+			else if (k == "Users" || k ~ /Users/) { gsub(/[^0-9]/, "", v); cur_users = (v==""?0:v) }
+			else if (k == "Sessions" || k ~ /Sessions/) { gsub(/[^0-9]/, "", v); cur_sessions = (v==""?0:v) }
 		}
 	}
 	END {
