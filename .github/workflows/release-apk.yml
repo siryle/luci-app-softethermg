@@ -45,6 +45,16 @@ jobs:
           python3 scripts/test-enable-switch.py
           python3 scripts/test-protocols.py
           node scripts/test-protocols-ui.js
+          if ! pkg-config --exists json-c; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends libjson-c-dev
+          fi
+          SOFTETHERMG_TEST_JSHN_DIR="$(bash scripts/prepare-json-tests.sh)"
+          export SOFTETHERMG_TEST_JSHN_DIR
+          python3 scripts/test-accounts.py
+          node scripts/test-users-ui.js
+          node --check htdocs/luci-static/resources/view/softethermg/users.js
+          node --check htdocs/luci-static/resources/view/softethermg/client.js
           node --check htdocs/luci-static/resources/view/softethermg/protocols.js
           sh -n root/usr/share/softethermg/api.sh
           node --check htdocs/luci-static/resources/view/softethermg/settings.js

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-VERSION="${1:-1.0.10}"
+VERSION="${1:-1.0.11}"
 RELEASE="1"
 PKG_NAME="luci-app-softethermg"
 DIST_DIR="${PWD}/release-assets"
@@ -50,6 +50,7 @@ EOF_POSTINST
 			--info name:${PKG_NAME} \
 			--info version:${VERSION}-r${RELEASE} \
 			--info arch:noarch \
+			--info depends:\"curl jsonfilter jshn\" \
 			--info description:\"LuCI support for SoftEther VPN Server Manager\" \
 			--info url:\"https://github.com/siryle/luci-app-softethermg\" \
 			--info license:GPL-3.0 \
@@ -62,6 +63,7 @@ EOF_POSTINST
 			--info name:${PKG_NAME} \
 			--info version:${VERSION}-r${RELEASE} \
 			--info arch:aarch64_cortex-a53 \
+			--info depends:\"curl jsonfilter jshn\" \
 			--info description:\"LuCI support for SoftEther VPN Server Manager (aarch64_cortex-a53)\" \
 			--info url:\"https://github.com/siryle/luci-app-softethermg\" \
 			--info license:GPL-3.0 \
@@ -73,6 +75,7 @@ EOF_POSTINST
 			--info name:${PKG_NAME} \
 			--info version:${VERSION}-r${RELEASE} \
 			--info arch:aarch64 \
+			--info depends:\"curl jsonfilter jshn\" \
 			--info description:\"LuCI support for SoftEther VPN Server Manager (ARM64)\" \
 			--info url:\"https://github.com/siryle/luci-app-softethermg\" \
 			--info license:GPL-3.0 \
@@ -84,6 +87,7 @@ EOF_POSTINST
 			--info name:${PKG_NAME} \
 			--info version:${VERSION}-r${RELEASE} \
 			--info arch:x86_64 \
+			--info depends:\"curl jsonfilter jshn\" \
 			--info description:\"LuCI support for SoftEther VPN Server Manager (x86_64)\" \
 			--info url:\"https://github.com/siryle/luci-app-softethermg\" \
 			--info license:GPL-3.0 \
@@ -153,6 +157,7 @@ Version: ${VERSION}-${RELEASE}
 Section: luci
 Architecture: all
 Maintainer: Sean <siryle1213@gmail.com>
+Depends: curl, jsonfilter, jshn
 Description: LuCI support for SoftEther VPN Server Manager
 EOF_CTRL
 echo "/etc/config/softethermg" > "$IPK_DIR/control/conffiles"

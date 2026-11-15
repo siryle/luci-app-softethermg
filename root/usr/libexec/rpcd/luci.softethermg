@@ -38,9 +38,14 @@ case "$1" in
 			"set_hub_online": {"hub": "str", "online": "bool"},
 			"get_hub_status": {"hub": "str"},
 			"enum_users": {"hub": "str"},
-			"add_user": {"hub": "str", "username": "str", "password": "str", "realname": "str", "note": "str", "expire_dt": "str", "max_upload": "int", "max_download": "int", "multi_logins": "int"},
+			"add_user": {"hub": "str", "username": "str", "password": "str", "realname": "str", "note": "str", "expire_dt": "str", "max_upload": "int", "max_download": "int", "multi_logins": "int", "group": "str"},
 			"del_user": {"hub": "str", "username": "str"},
 			"set_user_pass": {"hub": "str", "username": "str", "password": "str"},
+			"set_user_info": {"hub": "str", "username": "str", "realname": "str", "note": "str", "group": "str"},
+			"enum_groups": {"hub": "str"},
+			"create_group": {"hub": "str", "name": "str", "realname": "str", "note": "str"},
+			"set_group": {"hub": "str", "name": "str", "realname": "str", "note": "str"},
+			"delete_group": {"hub": "str", "name": "str"},
 			"get_nat": {"hub": "str"},
 			"set_nat": {"hub": "str", "use_nat": "bool", "use_dhcp": "bool", "ip": "str", "mask": "str", "dhcp_start": "str", "dhcp_end": "str", "dhcp_mask": "str", "gateway": "str", "dns": "str"},
 			"toggle_nat": {"hub": "str", "enable": "bool"},
@@ -136,7 +141,8 @@ case "$1" in
 				[ -z "$max_down" ] && max_down=0
 				[ -z "$multi" ] && multi=0
 
-				se_create_user "$hub" "$user" "$pass" "$realname" "$note" "$expire_dt" "$max_up" "$max_down" "$multi"
+				group=$(parse_json "$input" '@.group')
+				se_create_user "$hub" "$user" "$pass" "$realname" "$note" "$expire_dt" "$max_up" "$max_down" "$multi" "$group"
 				;;
 
 			del_user)
@@ -154,6 +160,40 @@ case "$1" in
 				pass=$(parse_json "$input" '@.password')
 				[ -z "$hub" ] && hub="DEFAULT"
 				se_set_user_password "$hub" "$user" "$pass"
+				;;
+
+			set_user_info)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				user=$(parse_json "$input" '@.username')
+				realname=$(parse_json "$input" '@.realname')
+				note=$(parse_json "$input" '@.note')
+				group=$(parse_json "$input" '@.group')
+				se_set_user_info "${hub:-DEFAULT}" "$user" "$realname" "$note" "$group"
+				;;
+
+			enum_groups)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				se_enum_groups "${hub:-DEFAULT}"
+				;;
+
+			create_group|set_group)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				name=$(parse_json "$input" '@.name')
+				realname=$(parse_json "$input" '@.realname')
+				note=$(parse_json "$input" '@.note')
+				create=false
+				[ "$2" != create_group ] || create=true
+				se_save_group "${hub:-DEFAULT}" "$name" "$realname" "$note" "$create"
+				;;
+
+			delete_group)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				name=$(parse_json "$input" '@.name')
+				se_delete_group "${hub:-DEFAULT}" "$name"
 				;;
 
 			get_nat)

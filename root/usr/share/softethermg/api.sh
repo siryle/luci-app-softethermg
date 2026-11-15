@@ -74,34 +74,31 @@ find_vpncmd() {
 # 1. vpncmd Native CLI Engine
 # ===========================================================================
 
-run_vpncmd() {
-	local hub="$1"
+run_vpncmd() (
+	hub="$1"
 	shift
-	local cmd="$*"
-	local vcmd
+	cmd="$*"
+	# /IN preserves SoftEther quoting; passing a split /CMD string corrupts it.
+	case "$cmd" in *[[:cntrl:]]*) return 1 ;; esac
 	vcmd=$(find_vpncmd)
-	local host port pass
 	host=$(get_api_host)
 	port=$(get_api_port)
 	pass=$(get_admin_password)
+	umask 077
+	command_file=$(mktemp /tmp/softethermg-command.XXXXXX) || return 1
+	trap 'rm -f "$command_file"' 0
+	trap 'exit 1' HUP INT TERM
+	printf '%s\n' "$cmd" > "$command_file" || return 1
 
-	local args="${host}:${port} /SERVER"
-	[ -n "$pass" ] && args="$args /PASSWORD:${pass}"
-	[ -n "$hub" ] && args="$args /HUB:${hub}"
-
-	local vcmd_dir
+	set -- "${host}:${port}" /SERVER "/PASSWORD:$pass" /CSV "/IN:$command_file"
+	[ -z "$hub" ] || set -- "$@" "/HUB:$hub"
 	if [ -f "$vcmd" ]; then
-		vcmd_dir="$(dirname "$vcmd")"
+		vcmd_dir=$(dirname "$vcmd")
+		(cd "$vcmd_dir" && "$vcmd" "$@" < /dev/null 2>/dev/null)
 	else
-		vcmd_dir="/usr/libexec/softethervpn"
+		"$vcmd" "$@" < /dev/null 2>/dev/null
 	fi
-
-	if [ -d "$vcmd_dir" ]; then
-		(cd "$vcmd_dir" && "$vcmd" $args /CSV /CMD $cmd < /dev/null 2>/dev/null)
-	else
-		$vcmd $args /CSV /CMD $cmd < /dev/null 2>/dev/null
-	fi
-}
+)
 
 # --- Server Status via vpncmd ---
 cmd_get_server_status() {
@@ -265,89 +262,246 @@ cmd_get_hub_status() {
 	echo "{\"jsonrpc\":\"2.0\",\"result\":{\"SecureNATEnabled_bool\":$is_nat},\"id\":\"1\"}"
 }
 
-# --- Users via vpncmd ---
-cmd_enum_users() {
-	local hub="${1:-DEFAULT}"
-	local raw
-	raw=$(run_vpncmd "$hub" "UserList")
-	if [ -z "$raw" ]; then
-		echo '{"jsonrpc":"2.0","result":{"UserList":[]},"id":"1"}'
-		return 0
-	fi
+# --- Users and groups via vpncmd ---
+validate_account_name() {
+	case "$1" in
+		''|*[[:space:][:cntrl:]]*|*\"*|*\\*|*/*)
+			api_error "Hub, user and group names must be non-empty and cannot contain whitespace, quotes, backslashes or slashes." -32602
+			return 1 ;;
+	esac
+}
 
-	echo "$raw" | awk '
-	BEGIN {
-		print "{\"jsonrpc\":\"2.0\",\"result\":{\"UserList\":["
-		cnt = 0
-		in_item = 0
-	}
-	{
-		sub(/\r$/, "")
-		if ($0 ~ /^Item,Value/) {
-			if (in_item && cur_name != "") {
-				if (cnt > 0) printf ","
-				printf "{\"Name_str\":\"%s\",\"AuthType_u32\":0,\"Realname_utf\":\"%s\",\"Note_utf\":\"%s\",\"NumLogin_u32\":%d}", cur_name, cur_real, cur_note, cur_logins
-				cnt++
+vpncmd_quote() {
+	printf '"%s"' "$(printf '%s' "$1" | awk '{ gsub(/"/, "\"\""); printf "%s", $0 }')"
+}
+
+validate_account_text() {
+	local value
+	for value in "$@"; do
+		case "$value" in
+			*[[:cntrl:]]*) api_error "Account fields cannot contain control characters." -32602; return 1 ;;
+		esac
+	done
+}
+
+parse_account_csv() {
+	awk -v kind="$1" '
+		function quote(value,    result, i, c) {
+			result = "\""
+			for (i = 1; i <= length(value); i++) {
+				c = substr(value, i, 1)
+				if (c == "\\") result = result "\\\\"
+				else if (c == "\"") result = result "\\\""
+				else if (c in escapes) result = result escapes[c]
+				else result = result c
 			}
-			in_item = 1
-			cur_name = ""; cur_real = ""; cur_note = ""; cur_logins = 0
-			next
+			return result "\""
 		}
-		idx = index($0, ",")
-		if (idx > 0) {
-			k = substr($0, 1, idx - 1)
-			v = substr($0, idx + 1)
-			gsub(/^"|"$/, "", k)
-			gsub(/^"|"$/, "", v)
-			if (k == "User Name") cur_name = v
-			else if (k == "Full Name") cur_real = v
-			else if (k == "Description") cur_note = v
-			else if (k == "Num Logins") cur_logins = v
+		function number(value) { gsub(/[^0-9]/, "", value); return value == "" ? 0 : value + 0 }
+		BEGIN {
+			for (i = 1; i < 32; i++) escapes[sprintf("%c", i)] = sprintf("\\u%04x", i)
+			auth["Anonymous Authentication"] = 0; auth["Password Authentication"] = 1
+			auth["Individual Certificate Authentication"] = 2; auth["Signed Certificate Authentication"] = 3
+			auth["RADIUS Authentication"] = 4; auth["NT Domain Authentication"] = 5
 		}
-	}
-	END {
-		if (in_item && cur_name != "") {
-			if (cnt > 0) printf ","
-			printf "{\"Name_str\":\"%s\",\"AuthType_u32\":0,\"Realname_utf\":\"%s\",\"Note_utf\":\"%s\",\"NumLogin_u32\":%d}", cur_name, cur_real, cur_note, cur_logins
+		{
+			sub(/\r$/, "")
+			for (i = 1; i <= length($0); i++) {
+				c = substr($0, i, 1)
+				if (c == "\"") {
+					if (quoted && substr($0, i + 1, 1) == "\"") { value = value "\""; i++ }
+					else quoted = !quoted
+				}
+				else if (c == "," && !quoted) { field[++count] = value; value = "" }
+				else value = value c
+			}
+			if (quoted) { value = value "\n"; next }
+			field[++count] = value
+			if ((kind == "User" && field[1] == "User Name" && field[2] == "Full Name") ||
+				(kind == "Group" && field[1] == "Group Name" && field[2] == "Full Name")) { header = 1; columns = count }
+			else if (header && count == columns && ((kind == "User" && count >= 6) || (kind == "Group" && count >= 4))) {
+				if (rows != "") rows = rows ","
+				rows = rows "{\"Name_str\":" quote(field[1]) ",\"Realname_utf\":" quote(field[2])
+				if (kind == "User") {
+					group = field[3] == "-" ? "" : field[3]
+					type = field[5] in auth ? auth[field[5]] : 6
+					rows = rows ",\"GroupName_str\":" quote(group) ",\"Note_utf\":" quote(field[4]) ",\"AuthType_u32\":" type
+					rows = rows ",\"NumLogin_u32\":" number(field[6]) ",\"TrafficBytes_u64\":" number(field[9])
+				}
+				else rows = rows ",\"Note_utf\":" quote(field[3]) ",\"NumUsers_u32\":" number(field[4])
+				rows = rows "}"
+			}
+			for (key in field) delete field[key]
+			count = 0; value = ""
 		}
-		print "]},\"id\":\"1\"}"
-	}'
+		END {
+			if (!header || quoted) {
+				print "{\"error\":{\"code\":-32000,\"message\":\"Unable to parse the SoftEther account list. Check the connection and vpncmd language (English).\"}}"
+				exit 1
+			}
+			print "{\"jsonrpc\":\"2.0\",\"result\":{\"" kind "List\":[" rows "]},\"id\":\"1\"}"
+		}
+	'
+}
+
+cmd_enum_users() {
+	local raw
+	raw=$(run_vpncmd "$1" "UserList") || { api_error "Unable to read the user list."; return 1; }
+	printf '%s\n' "$raw" | parse_account_csv User
+}
+
+cmd_enum_groups() {
+	local raw
+	raw=$(run_vpncmd "$1" "GroupList") || { api_error "Unable to read the group list."; return 1; }
+	printf '%s\n' "$raw" | parse_account_csv Group
 }
 
 cmd_create_user() {
-	local hub="$1"
-	local user="$2"
-	local pass="${3:-}"
-	local realname="${4:-none}"
-	local note="${5:-none}"
-	local max_up="${7:-0}"
-	local max_down="${8:-0}"
-	local multi="${9:-0}"
-
-	run_vpncmd "$hub" "UserCreate $user /GROUP:none /REALNAME:\"$realname\" /NOTE:\"$note\"" >/dev/null 2>&1
-	if [ -n "$pass" ]; then
-		run_vpncmd "$hub" "UserPasswordSet $user /PASSWORD:\"$pass\"" >/dev/null 2>&1
+	local hub="$1" user="$2" pass="$3" realname="$4" note="$5"
+	local max_up="${7:-0}" max_down="${8:-0}" multi="${9:-0}" group="${10:-none}"
+	if ! run_vpncmd "$hub" "UserCreate $user /GROUP:$group /REALNAME:$(vpncmd_quote "${realname:-none}") /NOTE:$(vpncmd_quote "${note:-none}")" >/dev/null; then
+		api_error "Unable to create the user. Check the name, group and administrator permissions."
+		return 1
 	fi
-	[ "$max_up" -gt 0 ] && run_vpncmd "$hub" "UserPolicySet $user /NAME:MaxUpload /VALUE:$max_up" >/dev/null 2>&1
-	[ "$max_down" -gt 0 ] && run_vpncmd "$hub" "UserPolicySet $user /NAME:MaxDownload /VALUE:$max_down" >/dev/null 2>&1
-	[ "$multi" -gt 0 ] && run_vpncmd "$hub" "UserPolicySet $user /NAME:MultiLogins /VALUE:$multi" >/dev/null 2>&1
-
+	if ! run_vpncmd "$hub" "UserPasswordSet $user /PASSWORD:$(vpncmd_quote "$pass")" >/dev/null; then
+		api_error "The user was created but its password could not be set. Reset the password before using this account."
+		return 1
+	fi
+	local policy value
+	for policy in MaxUpload MaxDownload MultiLogins; do
+		case "$policy" in MaxUpload) value="$max_up" ;; MaxDownload) value="$max_down" ;; MultiLogins) value="$multi" ;; esac
+		if [ "$value" -gt 0 ] && ! run_vpncmd "$hub" "UserPolicySet $user /NAME:$policy /VALUE:$value" >/dev/null; then
+			api_error "The user was created but its security policy could not be saved."
+			return 1
+		fi
+	done
 	echo '{"jsonrpc":"2.0","result":{},"id":"1"}'
 }
 
 cmd_set_user_password() {
-	local hub="$1"
-	local user="$2"
-	local pass="$3"
-	run_vpncmd "$hub" "UserPasswordSet $user /PASSWORD:\"$pass\"" >/dev/null 2>&1
+	if ! run_vpncmd "$1" "UserPasswordSet $2 /PASSWORD:$(vpncmd_quote "$3")" >/dev/null; then
+		api_error "Unable to reset the user password."
+		return 1
+	fi
 	echo '{"jsonrpc":"2.0","result":{},"id":"1"}'
 }
 
 cmd_delete_user() {
-	local hub="$1"
-	local user="$2"
-	run_vpncmd "$hub" "UserDelete $user" >/dev/null 2>&1
+	if ! run_vpncmd "$1" "UserDelete $2" >/dev/null; then
+		api_error "Unable to delete the user."
+		return 1
+	fi
 	echo '{"jsonrpc":"2.0","result":{},"id":"1"}'
+}
+
+# Read before editing so authentication, expiry and every policy field survive.
+rpc_update_account() (
+	kind="$1"; hub="$2"; name="$3"; action="$4"
+	response=$(rpc_call "Get$kind" "{\"HubName_str\":$(json_string "$hub"),\"Name_str\":$(json_string "$name")}")
+	data=$(printf '%s' "$response" | jsonfilter -e '@.result')
+	if [ -z "$data" ] || [ "$data" = null ]; then
+		printf '%s\n' "$response"
+		exit 1
+	fi
+	[ -r /usr/share/libubox/jshn.sh ] || { api_error "The OpenWrt jshn package is required to preserve existing account settings."; exit 1; }
+	. /usr/share/libubox/jshn.sh
+	json_load "$data" || { api_error "Unable to read the existing account settings."; exit 1; }
+	json_get_var record_name Name_str
+	json_get_type policy_type UsePolicy_bool
+	if [ "$record_name" != "$name" ] || [ "$policy_type" != boolean ]; then
+		api_error "The server returned an incomplete account record; no changes were written."
+		exit 1
+	fi
+	if [ "$kind" = User ]; then
+		json_get_type auth_field_type AuthType_u32
+		if [ "$auth_field_type" != int ]; then api_error "Authentication type is missing; no changes were written."; exit 1; fi
+	fi
+	if [ "$kind:$action" = User:info ]; then
+		json_get_var auth_type AuthType_u32
+		case "$auth_type" in
+			1) json_get_var credential HashedKey_bin ;;
+			2) json_get_var credential UserX_bin ;;
+			*) credential=not-required ;;
+		esac
+		if [ -z "$credential" ]; then api_error "Authentication data is missing; refusing to overwrite the user."; exit 1; fi
+	fi
+	# jshn normalizes punctuation on input; restore SoftEther wire field names.
+	json_get_keys keys
+	for key in $keys; do
+		case "$key" in
+			policy_*) wire="policy:${key#policy_}" ;;
+			Recv_*) wire="Recv.${key#Recv_}" ;;
+			Send_*) wire="Send.${key#Send_}" ;;
+			*) continue ;;
+		esac
+		json_get_type type "$key"
+		json_get_var value "$key"
+		case "$type" in int|boolean) "json_add_$type" "$wire" "$value" ;; esac
+	done
+	json_add_string HubName_str "$hub"
+	json_add_string Name_str "$name"
+	if [ "$action" = password ]; then
+		json_add_int AuthType_u32 1
+		json_add_string HashedKey_bin ''
+		json_add_string NtLmSecureHash_bin ''
+		json_add_string Auth_Password_str "$5"
+	else
+		json_add_string Realname_utf "$5"
+		json_add_string Note_utf "$6"
+		[ "$kind" != User ] || json_add_string GroupName_str "$7"
+	fi
+	rpc_call "Set$kind" "$(json_dump)"
+)
+
+se_enum_groups() {
+	validate_account_name "$1" || return 1
+	if [ "$(get_api_type)" = vpncmd ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
+		cmd_enum_groups "$1"
+	else
+		rpc_call EnumGroup "{\"HubName_str\":$(json_string "$1")}"
+	fi
+}
+
+se_save_group() {
+	local hub="$1" name="$2" realname="$3" note="$4" create="$5" command
+	validate_account_name "$hub" && validate_account_name "$name" && validate_account_text "$realname" "$note" || return 1
+	if [ "$(get_api_type)" = vpncmd ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
+		[ "$create" = true ] && command=GroupCreate || command=GroupSet
+		if ! run_vpncmd "$hub" "$command $name /REALNAME:$(vpncmd_quote "${realname:-none}") /NOTE:$(vpncmd_quote "${note:-none}")" >/dev/null; then
+			api_error "Unable to save the group. Check the name and administrator permissions."
+			return 1
+		fi
+		echo '{"jsonrpc":"2.0","result":{},"id":"1"}'
+	elif [ "$create" = true ]; then
+		rpc_call CreateGroup "{\"HubName_str\":$(json_string "$hub"),\"Name_str\":$(json_string "$name"),\"Realname_utf\":$(json_string "$realname"),\"Note_utf\":$(json_string "$note"),\"UsePolicy_bool\":false}"
+	else
+		rpc_update_account Group "$hub" "$name" info "$realname" "$note"
+	fi
+}
+
+se_delete_group() {
+	validate_account_name "$1" && validate_account_name "$2" || return 1
+	if [ "$(get_api_type)" = vpncmd ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
+		if ! run_vpncmd "$1" "GroupDelete $2" >/dev/null; then api_error "Unable to delete the group."; return 1; fi
+		echo '{"jsonrpc":"2.0","result":{},"id":"1"}'
+	else
+		rpc_call DeleteGroup "{\"HubName_str\":$(json_string "$1"),\"Name_str\":$(json_string "$2")}"
+	fi
+}
+
+se_set_user_info() {
+	local hub="$1" user="$2" realname="$3" note="$4" group="$5"
+	validate_account_name "$hub" && validate_account_name "$user" && validate_account_text "$realname" "$note" || return 1
+	[ -z "$group" ] || validate_account_name "$group" || return 1
+	if [ "$(get_api_type)" = vpncmd ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
+		if ! run_vpncmd "$hub" "UserSet $user /GROUP:${group:-none} /REALNAME:$(vpncmd_quote "${realname:-none}") /NOTE:$(vpncmd_quote "${note:-none}")" >/dev/null; then
+			api_error "Unable to save user details or group membership."
+			return 1
+		fi
+		echo '{"jsonrpc":"2.0","result":{},"id":"1"}'
+	else
+		rpc_update_account User "$hub" "$user" info "$realname" "$note" "$group"
+	fi
 }
 
 # --- SecureNAT via vpncmd ---
@@ -682,10 +836,11 @@ se_set_hub_online() {
 
 se_enum_users() {
 	local hub="${1:-DEFAULT}"
+	validate_account_name "$hub" || return 1
 	if [ "$(get_api_type)" = "vpncmd" ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
 		cmd_enum_users "$hub"
 	else
-		rpc_call "EnumUser" "{\"HubName_str\":\"$hub\"}"
+		rpc_call "EnumUser" "{\"HubName_str\":$(json_string "$hub")}"
 	fi
 }
 
@@ -698,16 +853,24 @@ se_create_user() {
 	local expire_dt="${6:-1970-01-01T00:00:00.000}"
 	local max_up="${7:-0}"
 	local max_down="${8:-0}"
-	local multi="${9:-0}"
+	local multi="${9:-0}" group="${10:-}"
+	validate_account_name "$hub" && validate_account_name "$user" && validate_account_text "$pass" "$realname" "$note" || return 1
+	[ -z "$group" ] || validate_account_name "$group" || return 1
+	if [ -z "$pass" ]; then api_error "A non-empty password is required for password authentication." -32602; return 1; fi
+	local value
+	for value in "$max_up" "$max_down" "$multi"; do
+		case "$value" in ''|*[!0-9]*) api_error "User limits must be non-negative integers." -32602; return 1 ;; esac
+		if [ "${#value}" -gt 10 ] || ! awk -v value="$value" 'BEGIN { exit value > 2147483647 }'; then api_error "User limits cannot exceed 2147483647." -32602; return 1; fi
+	done
 
 	if [ "$(get_api_type)" = "vpncmd" ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
-		cmd_create_user "$hub" "$user" "$pass" "$realname" "$note" "$expire_dt" "$max_up" "$max_down" "$multi"
+		cmd_create_user "$hub" "$user" "$pass" "$realname" "$note" "$expire_dt" "$max_up" "$max_down" "$multi" "$group"
 	else
 		local use_policy="false"
 		[ "$max_up" -gt 0 ] || [ "$max_down" -gt 0 ] || [ "$multi" -gt 0 ] && use_policy="true"
 		local params
-		params=$(printf '{"HubName_str":"%s","Name_str":"%s","AuthType_u32":0,"Auth_Password_str":"%s","Realname_utf":"%s","Note_utf":"%s","ExpireTime_dt":"%s","UsePolicy_bool":%s,"policy:MaxUpload_u32":%d,"policy:MaxDownload_u32":%d,"policy:MultiLogins_u32":%d}' \
-			"$hub" "$user" "$pass" "$realname" "$note" "$expire_dt" "$use_policy" "$max_up" "$max_down" "$multi")
+		params=$(printf '{"HubName_str":%s,"Name_str":%s,"GroupName_str":%s,"AuthType_u32":1,"Auth_Password_str":%s,"Realname_utf":%s,"Note_utf":%s,"ExpireTime_dt":%s,"UsePolicy_bool":%s,"policy:Access_bool":true,"policy:MaxUpload_u32":%s,"policy:MaxDownload_u32":%s,"policy:MultiLogins_u32":%s}' \
+			"$(json_string "$hub")" "$(json_string "$user")" "$(json_string "$group")" "$(json_string "$pass")" "$(json_string "$realname")" "$(json_string "$note")" "$(json_string "$expire_dt")" "$use_policy" "$(printf '%s' "$max_up" | awk '{printf "%.0f", $0 + 0}')" "$(printf '%s' "$max_down" | awk '{printf "%.0f", $0 + 0}')" "$(printf '%s' "$multi" | awk '{printf "%.0f", $0 + 0}')")
 		rpc_call "CreateUser" "$params"
 	fi
 }
@@ -716,22 +879,23 @@ se_set_user_password() {
 	local hub="$1"
 	local user="$2"
 	local pass="$3"
+	validate_account_name "$hub" && validate_account_name "$user" && validate_account_text "$pass" || return 1
+	if [ -z "$pass" ]; then api_error "Password cannot be empty." -32602; return 1; fi
 	if [ "$(get_api_type)" = "vpncmd" ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
 		cmd_set_user_password "$hub" "$user" "$pass"
 	else
-		local params
-		params=$(printf '{"HubName_str":"%s","Name_str":"%s","AuthType_u32":0,"Auth_Password_str":"%s"}' "$hub" "$user" "$pass")
-		rpc_call "SetUser" "$params"
+		rpc_update_account User "$hub" "$user" password "$pass"
 	fi
 }
 
 se_delete_user() {
 	local hub="$1"
 	local user="$2"
+	validate_account_name "$hub" && validate_account_name "$user" || return 1
 	if [ "$(get_api_type)" = "vpncmd" ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
 		cmd_delete_user "$hub" "$user"
 	else
-		rpc_call "DeleteUser" "{\"HubName_str\":\"$hub\",\"Name_str\":\"$user\"}"
+		rpc_call "DeleteUser" "{\"HubName_str\":$(json_string "$hub"),\"Name_str\":$(json_string "$user")}"
 	fi
 }
 

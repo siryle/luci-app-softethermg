@@ -21,9 +21,12 @@
    - 虚拟交换机增删改查、单键上线/下线。
    - 汇总各 HUB 下注册用户数、活跃会话及数据包统计。
 3. **用户与认证管理 (Users)**
-   - 多 HUB 切换管理。
-   - 用户的添加、删除、密码重置。
-   - 支持上行/下行速率配额限制 (QoS) 及多点并发登录限制。
+   - 多 HUB 切换、按用户名/用户组/姓名/备注搜索，显示真实认证方式、登录次数与流量。
+   - 用户的添加、资料编辑、删除、密码重置；编辑资料保留认证、到期时间及完整安全策略。
+   - 支持创建用户时设置上行/下行限速 (QoS) 及并发登录限制。
+   - 用户组的创建、资料编辑、删除，以及用户加入/退出组；已有组策略保留。
+   - 下载用户专属 SoftEther VPN Client `.vpn` 文件，支持编辑连接地址、端口和名称，可选在浏览器中嵌入密码。
+   - `.vpn` 文件遵循上游的配置转义、SHA-0 密码散列、UTF-8 BOM 和 CRLF 格式；未嵌入密码时由客户端询问。
 4. **虚拟 NAT 与 DHCP 服务 (SecureNAT)**
    - 单键开启/停用 SecureNAT。
    - 可视化配置虚拟网关 IP、子网掩码、DHCP 地址池起止范围及主 DNS 服务器。
@@ -65,7 +68,8 @@ luci-app-softethermg/
 ├── htdocs/luci-static/resources/view/softethermg/ # 现代 LuCI-JS 视图
 │   ├── overview.js                                # 运行状态与概览
 │   ├── hubs.js                                    # 虚拟 HUB 管理
-│   ├── users.js                                   # 用户与限速管理
+│   ├── users.js                                   # 用户、用户组与连接文件下载
+│   ├── client.js                                  # SoftEther Client .vpn 格式生成
 │   ├── nat.js                                     # SecureNAT 虚拟路由/DHCP
 │   ├── protocols.js                               # L2TP/IPsec 与 OpenVPN 协议
 │   ├── sessions.js                                # 实时会话与踢人
@@ -83,6 +87,7 @@ luci-app-softethermg/
 * `softether-vpnserver`（SoftEther VPN 核心，OpenWrt 官方软件源直接提供）
 * `curl`（用于发送本地 JSON-RPC HTTP POST）
 * `jsonfilter`（OpenWrt 系统内置轻量 JSON 提取器）
+* `jshn`（OpenWrt 原生 JSON 工具，用于编辑账号时保留已有认证和安全策略）
 
 ### 方式 1：源码编译打包 (推荐)
 1. 将本项目目录放入 OpenWrt 源码树或 SDK 的 `package/` 目录：
@@ -112,8 +117,8 @@ luci-app-softethermg/
 1. 在路由器上安装基础依赖：
    ```bash
    apk update
-   apk add softether-vpnserver curl jsonfilter
-   # (旧版系统使用: opkg update && opkg install softether-vpnserver curl jsonfilter)
+   apk add softether-vpnserver curl jsonfilter jshn
+   # (旧版系统使用: opkg update && opkg install softether-vpnserver curl jsonfilter jshn)
    ```
 2. 将本工程的 `root/` 与 `htdocs/` 目录中的文件，按对应的绝对路径复制到路由器的文件系统中：
    - `root/*` 覆盖到路由器的 `/` 根目录对应位置
@@ -149,4 +154,16 @@ luci-app-softethermg/
    - 解压后，远程接入通常使用文件名含 `remote_access_l3` 的 TUN 配置；网桥场景使用含 `site_to_site_bridge_l2` 的 TAP 配置。
    - 导入 OpenVPN 客户端前，检查 `.ovpn` 中的 `remote` 地址及端口，并确保路由器防火墙放行对应 UDP 端口。多 HUB 用户使用 `用户名@HUB名` 登录。
    - 需要服务器管理员权限；插件关闭、OpenVPN 未启用或服务端拒绝导出时会提示失败。
-   - 这是 OpenVPN 的 `.ovpn` 模板 ZIP，与上游用户页面下载的 SoftEther VPN Client `.vpn` 连接文件格式不同。
+   - 这是 OpenVPN 的 `.ovpn` 模板 ZIP，与用户管理页面下载的 SoftEther VPN Client `.vpn` 连接文件格式不同。
+4. **如何下载用户的 SoftEther VPN Client `.vpn` 文件？**
+   - 在“服务 → SoftEther VPN → 用户管理”中选择 HUB，点击目标用户的“下载 .vpn”。
+   - 填写客户端可访问的服务端地址和 SoftEther TCP 监听端口（默认 443），下载后导入 SoftEther VPN Client，并核对服务端证书。
+   - 默认不嵌入密码；需要时勾选“嵌入密码”并输入。密码仅在当前浏览器中处理，不上传或保存在路由器上。
+   - 密码认证使用 SoftEther 的 SHA-0 散列；RADIUS/NT 认证按客户端格式写入明文密码。持有带凭据文件的人可使用该凭据连接。
+   - 证书认证需在客户端另外配置用户证书；此版本不从服务端恢复或长期保存用户密码，也不提供上游的全部代理/模板选项。
+5. **用户组和策略目前支持到什么程度？**
+   - 支持组的创建、资料编辑、删除和用户成员调整；删除组保留用户账号并解除成员关系。
+   - 编辑组资料保留已有组策略，编辑用户资料或重置密码保留原有到期时间和策略。组策略的详细编辑、全部用户认证方式的配置和流量总额配额尚未完整对齐上游。
+6. **旧版 JSON-RPC 创建的用户显示“匿名认证”怎么办？**
+   - 旧版创建用户时认证类型设置有误，本版已修复新建用户和重置密码的逻辑。若旧版通过 JSON-RPC 创建的账号显示“匿名认证”，请使用“重置密码”将其改为密码认证。
+   - 用户组、到期时间和安全策略会保留；原本有意设置为匿名认证的账号不会自动修改。

@@ -41,6 +41,9 @@ download_packages_for_arch() {
 	download_item "$pkgs_html" "$pkgs_url" "curl-[0-9]"
 	download_item "$pkgs_html" "$pkgs_url" "libcurl4-"
 	download_item "$base_html" "$base_url" "jsonfilter-"
+	download_item "$base_html" "$base_url" "jshn-"
+	download_item "$base_html" "$base_url" "libjson-c[0-9]*-"
+	download_item "$base_html" "$base_url" "libblobmsg-json[0-9]*-"
 
 	local zip_file="${DIST_DIR}/dependencies-openwrt-${alias}.zip"
 	(
