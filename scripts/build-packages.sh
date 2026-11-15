@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-VERSION="${1:-1.0.0}"
+VERSION="${1:-1.0.2}"
 RELEASE="1"
 PKG_NAME="luci-app-softethermg"
 DIST_DIR="${PWD}/release-assets"
@@ -10,9 +10,9 @@ mkdir -p "$DIST_DIR"
 
 echo "==> Building ${PKG_NAME} version ${VERSION}-${RELEASE}..."
 
-# 1. Run in Alpine to build modern OpenWrt APK package
+# 1. Run in Alpine to build modern OpenWrt APK packages
 if command -v docker >/dev/null 2>&1; then
-	echo "==> Building modern APK package via Docker (Alpine)..."
+	echo "==> Building modern APK packages via Docker (Alpine)..."
 	docker run --rm -v "${PWD}:/work" -w /work alpine:edge sh -c "
 		apk add --no-cache apk-tools tar gzip
 
@@ -34,17 +34,51 @@ if command -v docker >/dev/null 2>&1; then
 		chmod +x \"\$STAGING_DIR/usr/share/softethermg/api.sh\"
 		chmod +x \"\$STAGING_DIR/usr/libexec/rpcd/luci.softethermg\"
 
-		# Generate modern OpenWrt APKv3 package
+		# Generate post-install script for LuCI registration & cache refresh
+		cat << 'EOF_POSTINST' > \"\$STAGING_DIR/post-install\"
+#!/bin/sh
+[ -s \"\${IPKG_INSTROOT}/lib/functions.sh\" ] && . \"\${IPKG_INSTROOT}/lib/functions.sh\"
+[ -x \"\${IPKG_INSTROOT}/etc/uci-defaults/luci-app-softethermg\" ] && \"\${IPKG_INSTROOT}/etc/uci-defaults/luci-app-softethermg\"
+[ -x \"/etc/init.d/rpcd\" ] && /etc/init.d/rpcd reload >/dev/null 2>&1
+rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null || true
+exit 0
+EOF_POSTINST
+		chmod 0755 \"\$STAGING_DIR/post-install\"
+
+		# 1. Main universal noarch package (OpenWrt standard for LuCI apps)
 		apk mkpkg \
 			--info name:${PKG_NAME} \
 			--info version:${VERSION}-r${RELEASE} \
-			--info arch:all \
+			--info arch:noarch \
 			--info description:\"LuCI support for SoftEther VPN Server Manager\" \
 			--info url:\"https://github.com/siryle/luci-app-softethermg\" \
 			--info license:GPL-3.0 \
-			--info depends:\"jsonfilter curl\" \
+			--script \"post-install:\$STAGING_DIR/post-install\" \
 			--files \"\$STAGING_DIR\" \
 			--output \"release-assets/${PKG_NAME}-${VERSION}-r${RELEASE}.apk\"
+
+		# 2. Arch-pinned packages for aarch64 and x86_64
+		apk mkpkg \
+			--info name:${PKG_NAME} \
+			--info version:${VERSION}-r${RELEASE} \
+			--info arch:aarch64 \
+			--info description:\"LuCI support for SoftEther VPN Server Manager (ARM64)\" \
+			--info url:\"https://github.com/siryle/luci-app-softethermg\" \
+			--info license:GPL-3.0 \
+			--script \"post-install:\$STAGING_DIR/post-install\" \
+			--files \"\$STAGING_DIR\" \
+			--output \"release-assets/${PKG_NAME}-${VERSION}-r${RELEASE}_aarch64.apk\"
+
+		apk mkpkg \
+			--info name:${PKG_NAME} \
+			--info version:${VERSION}-r${RELEASE} \
+			--info arch:x86_64 \
+			--info description:\"LuCI support for SoftEther VPN Server Manager (x86_64)\" \
+			--info url:\"https://github.com/siryle/luci-app-softethermg\" \
+			--info license:GPL-3.0 \
+			--script \"post-install:\$STAGING_DIR/post-install\" \
+			--files \"\$STAGING_DIR\" \
+			--output \"release-assets/${PKG_NAME}-${VERSION}-r${RELEASE}_x86_64.apk\"
 
 		rm -rf \"\$STAGING_DIR\"
 	"
@@ -72,13 +106,14 @@ url = https://github.com/siryle/luci-app-softethermg
 builddate = $(date +%s)
 packager = Sean <siryle1213@gmail.com>
 size = 204800
-arch = all
+arch = noarch
 license = GPL-3.0
 origin = ${PKG_NAME}
-depend = jsonfilter curl
 EOF_PKG
 
 	(cd "$STAGING_DIR" && tar -czf "$DIST_DIR/${PKG_NAME}-${VERSION}-r${RELEASE}.apk" ./*)
+	cp "$DIST_DIR/${PKG_NAME}-${VERSION}-r${RELEASE}.apk" "$DIST_DIR/${PKG_NAME}-${VERSION}-r${RELEASE}_aarch64.apk"
+	cp "$DIST_DIR/${PKG_NAME}-${VERSION}-r${RELEASE}.apk" "$DIST_DIR/${PKG_NAME}-${VERSION}-r${RELEASE}_x86_64.apk"
 	rm -rf "$STAGING_DIR"
 fi
 
@@ -103,13 +138,22 @@ mkdir -p "$IPK_DIR/control"
 cat << EOF_CTRL > "$IPK_DIR/control/control"
 Package: ${PKG_NAME}
 Version: ${VERSION}-${RELEASE}
-Depends: jsonfilter, curl
 Section: luci
 Architecture: all
 Maintainer: Sean <siryle1213@gmail.com>
 Description: LuCI support for SoftEther VPN Server Manager
 EOF_CTRL
 echo "/etc/config/softethermg" > "$IPK_DIR/control/conffiles"
+
+cat << 'EOF_POSTINST' > "$IPK_DIR/control/postinst"
+#!/bin/sh
+[ -s "${IPKG_INSTROOT}/lib/functions.sh" ] && . "${IPKG_INSTROOT}/lib/functions.sh"
+[ -x "${IPKG_INSTROOT}/etc/uci-defaults/luci-app-softethermg" ] && "${IPKG_INSTROOT}/etc/uci-defaults/luci-app-softethermg"
+[ -x "/etc/init.d/rpcd" ] && /etc/init.d/rpcd reload >/dev/null 2>&1
+rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null || true
+exit 0
+EOF_POSTINST
+chmod 0755 "$IPK_DIR/control/postinst"
 
 (cd "$IPK_DIR/control" && tar -czf "$IPK_DIR/control.tar.gz" ./*)
 (cd "$STAGING_DIR" && tar -czf "$IPK_DIR/data.tar.gz" ./*)

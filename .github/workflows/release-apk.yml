@@ -80,7 +80,9 @@ jobs:
 
             | 文件名 | 适用平台 / 格式 | 说明 |
             | :--- | :--- | :--- |
-            | **`luci-app-softethermg-*.apk`** | **OpenWrt 24.x+** (APK 格式) | **主插件包** (通用所有架构: ARM, MIPS, x86) |
+            | **`luci-app-softethermg-*.apk`** | **OpenWrt 24.x+** (noarch 通用) | **主插件标准包** (OpenWrt 官方 noarch 规范，全架构通用) |
+            | **`luci-app-softethermg-*_aarch64.apk`** | **OpenWrt 24.x+** (aarch64 专用) | 针对 ARM64 软路由架构锁定的主插件包 |
+            | **`luci-app-softethermg-*_x86_64.apk`** | **OpenWrt 24.x+** (x86_64 专用) | 针对 x86_64 软路由架构锁定的主插件包 |
             | **`luci-app-softethermg_*_all.ipk`** | OpenWrt 21/22/23 (OPKG 格式) | 传统固件兼容主插件包 |
             | **`dependencies-openwrt-aarch64.zip`** | **ARM64 路由器** (离线依赖包) | 包含官方 `softethervpn-server`, `base`, `curl`, `jsonfilter` 的 APK 包合集 |
             | **`dependencies-openwrt-x86_64.zip`** | **x86_64 软路由** (离线依赖包) | 包含官方 `softethervpn-server`, `base`, `curl`, `jsonfilter` 的 APK 包合集 |
