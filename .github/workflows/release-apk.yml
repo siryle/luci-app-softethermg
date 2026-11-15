@@ -40,6 +40,14 @@ jobs:
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
+      - name: Validate Plugin Switch
+        run: |
+          python3 scripts/test-enable-switch.py
+          node --check htdocs/luci-static/resources/view/softethermg/settings.js
+          node --check htdocs/luci-static/resources/view/softethermg/overview.js
+          sh -n root/etc/init.d/softethermg
+          sh -n root/usr/libexec/rpcd/luci.softethermg
+
       - name: Build Project Packages (.apk and .ipk)
         run: |
           chmod +x scripts/build-packages.sh
