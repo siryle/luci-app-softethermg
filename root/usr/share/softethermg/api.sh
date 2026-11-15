@@ -56,15 +56,17 @@ run_vpncmd() {
 	local cmd="$*"
 	local vcmd
 	vcmd=$(find_vpncmd)
-	local host
-	local port
-	local pass
+	local host port pass
 	host=$(get_api_host)
 	port=$(get_api_port)
 	pass=$(get_admin_password)
 
 	local args="${host}:${port} /SERVER"
-	[ -n "$pass" ] && args="$args /PASSWORD:${pass}"
+	if [ -n "$pass" ]; then
+		args="$args /PASSWORD:${pass}"
+	else
+		args="$args /PASSWORD:\"\""
+	fi
 	[ -n "$hub" ] && args="$args /HUB:${hub}"
 
 	local vcmd_dir
@@ -75,9 +77,9 @@ run_vpncmd() {
 	fi
 
 	if [ -d "$vcmd_dir" ]; then
-		(cd "$vcmd_dir" && "$vcmd" $args /CSV /CMD $cmd 2>/dev/null)
+		(cd "$vcmd_dir" && "$vcmd" $args /CSV /CMD $cmd < /dev/null 2>/dev/null)
 	else
-		$vcmd $args /CSV /CMD $cmd 2>/dev/null
+		$vcmd $args /CSV /CMD $cmd < /dev/null 2>/dev/null
 	fi
 }
 

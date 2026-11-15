@@ -70,11 +70,11 @@ return view.extend({
 					]),
 					E('div', { 'class': 'cbi-value' }, [
 						E('label', { 'class': 'cbi-value-title' }, _('服务端版本')),
-						E('div', { 'class': 'cbi-value-field', 'style': 'font-family:monospace;' }, s.ServerVersionString_str || (isConnected ? _('未知') : '-'))
+						E('div', { 'class': 'cbi-value-field', 'style': 'font-family:monospace;' }, s.ServerVersionString_str || (isConnected ? _('已连接 (需在基本设置输入密码)') : '-'))
 					]),
 					E('div', { 'class': 'cbi-value' }, [
 						E('label', { 'class': 'cbi-value-title' }, _('构建版本信息')),
-						E('div', { 'class': 'cbi-value-field', 'style': 'font-family:monospace; color:#6b7280;' }, s.ServerBuildInfoString_str || '-')
+						E('div', { 'class': 'cbi-value-field', 'style': 'font-family:monospace; color:#6b7280;' }, s.ServerBuildInfoString_str || (isConnected ? _('配置密码后获取完整构建及流量信息') : '-'))
 					]),
 					E('div', { 'class': 'cbi-value' }, [
 						E('label', { 'class': 'cbi-value-title' }, _('虚拟 HUB 数量')),
