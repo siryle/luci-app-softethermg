@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-VERSION="${1:-1.0.3}"
+VERSION="${1:-1.0.4}"
 RELEASE="1"
 PKG_NAME="luci-app-softethermg"
 DIST_DIR="${PWD}/release-assets"
@@ -39,7 +39,7 @@ if command -v docker >/dev/null 2>&1; then
 #!/bin/sh
 [ -s \"\${IPKG_INSTROOT}/lib/functions.sh\" ] && . \"\${IPKG_INSTROOT}/lib/functions.sh\"
 [ -x \"\${IPKG_INSTROOT}/etc/uci-defaults/luci-app-softethermg\" ] && \"\${IPKG_INSTROOT}/etc/uci-defaults/luci-app-softethermg\"
-[ -x \"/etc/init.d/rpcd\" ] && /etc/init.d/rpcd reload >/dev/null 2>&1
+[ -x \"/etc/init.d/rpcd\" ] && /etc/init.d/rpcd restart >/dev/null 2>&1
 rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null || true
 exit 0
 EOF_POSTINST
@@ -161,7 +161,7 @@ cat << 'EOF_POSTINST' > "$IPK_DIR/control/postinst"
 #!/bin/sh
 [ -s "${IPKG_INSTROOT}/lib/functions.sh" ] && . "${IPKG_INSTROOT}/lib/functions.sh"
 [ -x "${IPKG_INSTROOT}/etc/uci-defaults/luci-app-softethermg" ] && "${IPKG_INSTROOT}/etc/uci-defaults/luci-app-softethermg"
-[ -x "/etc/init.d/rpcd" ] && /etc/init.d/rpcd reload >/dev/null 2>&1
+[ -x "/etc/init.d/rpcd" ] && /etc/init.d/rpcd restart >/dev/null 2>&1
 rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null || true
 exit 0
 EOF_POSTINST

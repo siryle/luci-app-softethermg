@@ -102,11 +102,11 @@ return view.extend({
 					E('div', { 'class': 'cbi-value' }, [
 						E('label', { 'class': 'cbi-value-title' }, _('模块跳转')),
 						E('div', { 'class': 'cbi-value-field' }, [
-							E('a', { 'class': 'cbi-button cbi-button-action', 'href': L.url('admin/vpn/softethermg/hubs'), 'style': 'margin-right:8px;' }, _('虚拟 HUB')),
-							E('a', { 'class': 'cbi-button cbi-button-action', 'href': L.url('admin/vpn/softethermg/users'), 'style': 'margin-right:8px;' }, _('用户策略')),
-							E('a', { 'class': 'cbi-button cbi-button-action', 'href': L.url('admin/vpn/softethermg/nat'), 'style': 'margin-right:8px;' }, _('SecureNAT')),
-							E('a', { 'class': 'cbi-button cbi-button-action', 'href': L.url('admin/vpn/softethermg/protocols'), 'style': 'margin-right:8px;' }, _('服务协议')),
-							E('a', { 'class': 'cbi-button cbi-button-action', 'href': L.url('admin/vpn/softethermg/sessions') }, _('活跃会话'))
+							E('a', { 'class': 'cbi-button cbi-button-action', 'href': L.url('admin/services/softethermg/hubs'), 'style': 'margin-right:8px;' }, _('虚拟 HUB')),
+							E('a', { 'class': 'cbi-button cbi-button-action', 'href': L.url('admin/services/softethermg/users'), 'style': 'margin-right:8px;' }, _('用户策略')),
+							E('a', { 'class': 'cbi-button cbi-button-action', 'href': L.url('admin/services/softethermg/nat'), 'style': 'margin-right:8px;' }, _('SecureNAT')),
+							E('a', { 'class': 'cbi-button cbi-button-action', 'href': L.url('admin/services/softethermg/protocols'), 'style': 'margin-right:8px;' }, _('服务协议')),
+							E('a', { 'class': 'cbi-button cbi-button-action', 'href': L.url('admin/services/softethermg/sessions') }, _('活跃会话'))
 						])
 					])
 				])
