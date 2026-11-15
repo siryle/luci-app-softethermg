@@ -67,7 +67,18 @@ run_vpncmd() {
 	[ -n "$pass" ] && args="$args /PASSWORD:${pass}"
 	[ -n "$hub" ] && args="$args /HUB:${hub}"
 
-	$vcmd $args /CSV /CMD $cmd 2>/dev/null
+	local vcmd_dir
+	if [ -f "$vcmd" ]; then
+		vcmd_dir="$(dirname "$vcmd")"
+	else
+		vcmd_dir="/usr/libexec/softethervpn"
+	fi
+
+	if [ -d "$vcmd_dir" ]; then
+		(cd "$vcmd_dir" && "$vcmd" $args /CSV /CMD $cmd 2>/dev/null)
+	else
+		$vcmd $args /CSV /CMD $cmd 2>/dev/null
+	fi
 }
 
 # --- Server Status via vpncmd ---

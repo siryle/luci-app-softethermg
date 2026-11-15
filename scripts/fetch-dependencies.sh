@@ -4,70 +4,52 @@ set -euo pipefail
 DIST_DIR="${PWD}/release-assets"
 mkdir -p "$DIST_DIR"
 
-python3 - << 'PY_EOF'
-import os
-import re
-import urllib.request
-import zipfile
-import shutil
+download_packages_for_arch() {
+	local arch="$1"
+	local alias="$2"
+	local target_dir="/tmp/deps-${alias}"
+	rm -rf "$target_dir"
+	mkdir -p "$target_dir"
 
-DIST_DIR = os.path.abspath("release-assets")
-os.makedirs(DIST_DIR, exist_ok=True)
+	echo "==> Fetching OpenWrt APK dependencies for ${alias} (${arch})..."
 
-targets = [
-    ("aarch64_generic", "aarch64"),
-    ("x86_64", "x86_64"),
-]
+	local base_url="https://downloads.openwrt.org/snapshots/packages/${arch}/base"
+	local pkgs_url="https://downloads.openwrt.org/snapshots/packages/${arch}/packages"
 
-patterns = [
-    ("softethervpn-server", r"(?<![\w\-])softethervpn-server-[\w\.\-~]+\.apk"),
-    ("softethervpn-base", r"(?<![\w\-])softethervpn-base-[\w\.\-~]+\.apk"),
-    ("softethervpn5-server", r"(?<![\w\-])softethervpn5-server-[\w\.\-~]+\.apk"),
-    ("softethervpn5-libs", r"(?<![\w\-])softethervpn5-libs-[\w\.\-~]+\.apk"),
-    ("curl", r"(?<![\w\-])curl-\d[\w\.\-~]+\.apk"),
-    ("libcurl4", r"(?<![\w\-])libcurl4-[\w\.\-~]+\.apk"),
-    ("jsonfilter", r"(?<![\w\-])jsonfilter-[\w\.\-~]+\.apk"),
-]
+	local base_html pkgs_html
+	base_html=$(curl -sL "${base_url}/")
+	pkgs_html=$(curl -sL "${pkgs_url}/")
 
-for arch, alias in targets:
-    print(f"==> Resolving dependencies for OpenWrt {alias} ({arch})...")
-    stage_dir = f"/tmp/deps-{alias}"
-    shutil.rmtree(stage_dir, ignore_errors=True)
-    os.makedirs(stage_dir, exist_ok=True)
+	download_item() {
+		local html="$1"
+		local url_prefix="$2"
+		local pattern="$3"
+		local filename
+		filename=$(echo "$html" | grep -o -E "href=\"${pattern}[^\"]+\.apk\"" | sed "s/href=\"//;s/\"//" | head -n 1 || true)
+		if [ -n "$filename" ]; then
+			echo "    -> Downloading ${filename}..."
+			curl -sL "${url_prefix}/${filename}" -o "${target_dir}/${filename}"
+		else
+			echo "    [WARN] No match found for: ${pattern}"
+		fi
+	}
 
-    base_url = f"https://downloads.openwrt.org/snapshots/packages/{arch}/base"
-    pkgs_url = f"https://downloads.openwrt.org/snapshots/packages/{arch}/packages"
+	download_item "$pkgs_html" "$pkgs_url" "softethervpn-server-"
+	download_item "$pkgs_html" "$pkgs_url" "softethervpn-base-"
+	download_item "$pkgs_html" "$pkgs_url" "softethervpn5-server-"
+	download_item "$pkgs_html" "$pkgs_url" "softethervpn5-libs-"
+	download_item "$pkgs_html" "$pkgs_url" "curl-[0-9]"
+	download_item "$pkgs_html" "$pkgs_url" "libcurl4-"
+	download_item "$base_html" "$base_url" "jsonfilter-"
 
-    try:
-        base_html = urllib.request.urlopen(f"{base_url}/", timeout=20).read().decode("utf-8", errors="ignore")
-        pkgs_html = urllib.request.urlopen(f"{pkgs_url}/", timeout=20).read().decode("utf-8", errors="ignore")
-    except Exception as e:
-        print(f"    [WARN] Failed to fetch index for {arch}: {e}")
-        continue
+	local zip_file="${DIST_DIR}/dependencies-openwrt-${alias}.zip"
+	(
+		cd "$target_dir"
+		zip -r -q "$zip_file" ./*
+	)
+	echo "==> Successfully packed ${zip_file} ($(du -h "$zip_file" | cut -f1))"
+	rm -rf "$target_dir"
+}
 
-    downloaded = []
-    for name, pat in patterns:
-        pool = base_html if name == "jsonfilter" else pkgs_html
-        prefix = base_url if name == "jsonfilter" else pkgs_url
-        matches = list(dict.fromkeys(re.findall(pat, pool)))
-        if not matches:
-            print(f"    [WARN] No package found matching {name}")
-            continue
-        pkg_file = matches[0]
-        pkg_url = f"{prefix}/{pkg_file}"
-        dest_path = os.path.join(stage_dir, pkg_file)
-        print(f"    -> Downloading {pkg_file}...")
-        try:
-            urllib.request.urlretrieve(pkg_url, dest_path)
-            downloaded.append(dest_path)
-        except Exception as e:
-            print(f"    [ERROR] Download failed for {pkg_file}: {e}")
-
-    # Pack into zip
-    zip_path = os.path.join(DIST_DIR, f"dependencies-openwrt-{alias}.zip")
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file_path in downloaded:
-            zf.write(file_path, arcname=os.path.basename(file_path))
-    print(f"==> Successfully created {zip_path} with {len(downloaded)} APK packages.")
-
-PY_EOF
+download_packages_for_arch "aarch64_generic" "aarch64"
+download_packages_for_arch "x86_64" "x86_64"

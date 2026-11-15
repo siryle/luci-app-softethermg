@@ -10,7 +10,7 @@ parse_json() {
 	if command -v jsonfilter >/dev/null 2>&1; then
 		echo "$json" | jsonfilter -e "$expr"
 	else
-		# Pure POSIX awk fallback without python dependency
+		# Pure POSIX awk fallback for environments without jsonfilter
 		local key="${expr#@.}"
 		echo "$json" | awk -v k="$key" '
 			BEGIN { RS="[,{}\\[\\]]"; FS=":" }

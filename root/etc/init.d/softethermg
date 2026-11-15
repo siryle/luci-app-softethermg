@@ -5,16 +5,19 @@ START=90
 STOP=10
 
 NAME="softethermg"
-PROG="/usr/bin/vpnserver"
+PROG="/usr/libexec/softethervpn/vpnserver"
 
 find_vpnserver() {
 	if [ -x "$PROG" ]; then
 		return 0
+	elif [ -x "/usr/libexec/softethervpn/vpnserver" ]; then
+		PROG="/usr/libexec/softethervpn/vpnserver"
+		return 0
 	elif command -v vpnserver >/dev/null 2>&1; then
 		PROG=$(command -v vpnserver)
 		return 0
-	elif [ -x "/usr/libexec/softethervpn/vpnserver" ]; then
-		PROG="/usr/libexec/softethervpn/vpnserver"
+	elif [ -x "/usr/bin/vpnserver" ]; then
+		PROG="/usr/bin/vpnserver"
 		return 0
 	elif [ -x "/usr/libexec/softether/vpnserver" ]; then
 		PROG="/usr/libexec/softether/vpnserver"
