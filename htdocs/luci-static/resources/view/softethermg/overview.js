@@ -36,9 +36,9 @@ return view.extend({
 		const statusRes = data[0] || {};
 		const hubsRes = data[1] || {};
 
-		const isRunning = (!statusRes.error && statusRes.result) || hubs.length > 0;
 		const s = statusRes.result || {};
 		const hubs = hubsRes.result?.HubList || [];
+		const isRunning = (!statusRes.error && statusRes.result) || hubs.length > 0;
 		const isConnected = isRunning || hubs.length > 0;
 
 		const totalUsers = (s.NumUsers_u32 !== undefined && s.NumUsers_u32 !== null && s.NumUsers_u32 > 0)
