@@ -54,9 +54,17 @@
 			"path": "softethermg/sessions"
 		}
 	},
+	"admin/services/softethermg/server": {
+		"title": "服务器管理",
+		"order": 7,
+		"action": {
+			"type": "view",
+			"path": "softethermg/server"
+		}
+	},
 	"admin/services/softethermg/settings": {
 		"title": "基本设置",
-		"order": 7,
+		"order": 8,
 		"action": {
 			"type": "view",
 			"path": "softethermg/settings"

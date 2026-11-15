@@ -9,6 +9,7 @@ const declare = (method, params = []) => rpc.declare({ object: 'luci.softethermg
 const callHubs = declare('enum_hubs');
 const callUsers = declare('enum_users', ['hub']);
 const callGroups = declare('enum_groups', ['hub']);
+const callListeners = declare('enum_listeners');
 const callAdd = declare('add_user', ['hub', 'username', 'password', 'realname', 'note', 'expire_dt', 'max_upload', 'max_download', 'multi_logins', 'group']);
 const callInfo = declare('set_user_info', ['hub', 'username', 'realname', 'note', 'group']);
 const callPassword = declare('set_user_pass', ['hub', 'username', 'password']);
@@ -238,6 +239,9 @@ return view.extend({
 		const configured = uci.get('softethermg', 'global', 'api_host');
 		const host = input('client-host', configured && !['127.0.0.1', '::1', 'localhost'].includes(configured) ? configured : location.hostname.replace(/^\[|\]$/g, ''));
 		const port = input('client-port', '443', 'number'); port.min = 1; port.max = 65535;
+		const portHint = E('span', {}, _('正在读取服务端 TCP 监听端口，可自行填写外部映射端口。'));
+		let portEdited = false;
+		port.addEventListener('input', () => { portEdited = true; });
 		const account = input('client-name', `${hub} - ${user.Name_str}`);
 		const embed = E('input', { id: 'se-account-embed', type: 'checkbox', disabled: ![1, 4, 5].includes(user.AuthType_u32) });
 		const password = input('client-password', '', 'password'); password.disabled = true; password.autocomplete = 'off';
@@ -255,12 +259,17 @@ return view.extend({
 		} }, _('下载 .vpn 文件'));
 		ui.showModal(_('下载连接文件：') + user.Name_str, [
 			E('p', {}, _('用于 SoftEther VPN Client，导入后连接当前用户。服务端地址和端口应填写客户端实际可访问的地址；导入后核对服务端证书。')),
-			field(_('服务端地址'), host), field(_('端口'), port), field(_('连接名称'), account),
+			field(_('服务端地址'), host), field(_('端口'), port, portHint), field(_('连接名称'), account),
 			field(_('嵌入密码'), embed),
 			E('p', {}, _('不勾选时由客户端在连接时询问。勾选后，持有文件的人可以使用该凭据连接；RADIUS/NT 密码会以明文写入文件。')),
 			field(_('密码'), password, _('密码仅在当前浏览器中生成文件，不上传或保存到路由器。证书认证需在客户端另外配置证书。')),
 			E('div', { 'class': 'right' }, [E('button', { 'type': 'button', 'class': 'cbi-button', click: () => { password.value = ''; ui.hideModal(); } }, _('取消')), ' ', download])
 		]);
+		callListeners().then(result).then(data => {
+			const ports = (data.ListenerList || []).filter(listener => listener.Enables_bool && !listener.Errors_bool).map(listener => Number(listener.Ports_u32)).sort((a, b) => a - b);
+			if (!portEdited && ports.length && !ports.includes(443)) port.value = String(ports[0]);
+			portHint.textContent = ports.length ? _('服务端可用 TCP 端口：') + ports.join(', ') + _('。有端口映射时请填写外部端口。') : _('服务端没有可用 TCP 监听端口，请先在服务器管理中配置。');
+		}).catch(() => { portHint.textContent = _('无法读取监听端口，请核对填写的 TCP 端口。'); });
 	},
 
 	handleSaveApply: null,

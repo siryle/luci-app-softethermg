@@ -56,6 +56,14 @@ case "$1" in
 			"make_openvpn_config": {},
 			"enum_sessions": {"hub": "str"},
 			"kill_session": {"hub": "str", "session": "str"},
+			"enum_listeners": {},
+			"create_listener": {"port": "int"},
+			"set_listener": {"port": "int", "enabled": "bool"},
+			"delete_listener": {"port": "int"},
+			"get_server_cert": {},
+			"set_server_cert": {"cert": "str", "key": "str"},
+			"regenerate_server_cert": {"common_name": "str"},
+			"backup_config": {},
 			"change_admin_password": {"password": "str"}
 		}'
 		;;
@@ -288,15 +296,56 @@ case "$1" in
 				se_delete_session "$hub" "$session"
 				;;
 
+			enum_listeners)
+				se_enum_listeners
+				;;
+
+			create_listener|set_listener|delete_listener)
+				read -r input
+				port=$(parse_json "$input" '@.port')
+				enabled=$(parse_json "$input" '@.enabled')
+				case "$2" in
+					create_listener) se_change_listener create "$port" true ;;
+					set_listener) se_change_listener set "$port" "$enabled" ;;
+					delete_listener) se_change_listener delete "$port" true ;;
+				esac
+				;;
+
+			get_server_cert)
+				se_get_server_cert
+				;;
+
+			set_server_cert)
+				read -r input
+				cert=$(parse_json "$input" '@.cert')
+				key=$(parse_json "$input" '@.key')
+				se_set_server_cert "$cert" "$key"
+				;;
+
+			regenerate_server_cert)
+				read -r input
+				common_name=$(parse_json "$input" '@.common_name')
+				se_regenerate_server_cert "$common_name"
+				;;
+
+			backup_config)
+				se_backup_config
+				;;
+
 			change_admin_password)
 				read -r input
 				password=$(parse_json "$input" '@.password')
 				if [ -n "$password" ]; then
 					res=$(se_set_server_password "$password")
-					# Update in UCI so local management doesn't lose access
-					uci set softethermg.global.admin_password="$password"
-					uci commit softethermg
-					echo "$res"
+					if [ -n "$(printf '%s' "$res" | jsonfilter -e '@.error')" ]; then
+						printf '%s\n' "$res"
+					elif [ "$(printf '%s' "$res" | jsonfilter -e '@.result')" != '{}' ]; then
+						api_error "The server did not confirm the password change. Local credentials were not modified."
+					elif uci set softethermg.global.admin_password="$password" && uci commit softethermg; then
+						printf '%s\n' "$res"
+					else
+						api_error "The server password changed but local settings could not be saved. Update the administrator password in Basic Settings."
+					fi
 				else
 					echo '{"jsonrpc":"2.0","error":{"code":-32602,"message":"Password cannot be empty"},"id":"1"}'
 				fi

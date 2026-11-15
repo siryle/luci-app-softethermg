@@ -35,6 +35,7 @@ async function setup(hubs = ['DEFAULT', 'OFFICE']) {
 		enum_hubs: () => ({ result: { HubList: hubs.map(HubName_str => ({ HubName_str })) } }),
 		enum_users: () => ({ result: { UserList: structuredClone(state.users) } }),
 		enum_groups: () => ({ result: { GroupList: structuredClone(state.groups) } }),
+		enum_listeners: () => ({ result: { ListenerList: [{ Ports_u32: 5555, Enables_bool: true, Errors_bool: false }] } }),
 		set_user_info: (hub, name, realname, note, group) => { Object.assign(state.users.find(user => user.Name_str === name), { Realname_utf: realname, Note_utf: note, GroupName_str: group }); return { result: {} }; },
 		add_user: (hub, name, password, realname, note, expires, up, down, logins, group) => { state.users.push({ Name_str: name, AuthType_u32: 1, Realname_utf: realname, Note_utf: note, GroupName_str: group }); return { result: {} }; },
 		create_group: (hub, name, realname, note) => { state.groups.push({ Name_str: name, Realname_utf: realname, Note_utf: note, NumUsers_u32: 0 }); return { result: {} }; },
@@ -100,6 +101,8 @@ async function setup(hubs = ['DEFAULT', 'OFFICE']) {
 	assert(!text(page.view.userBody).includes('radius'));
 
 	page.view.downloadClient(page.state.users[0]);
+	await flush();
+	assert.equal(page.field('client-port').value, '5555');
 	assert.equal(page.field('client-host').value, '198.51.100.8');
 	assert.equal(page.field('embed').checked, false);
 	page.field('embed').checked = true; page.field('embed').change();
@@ -111,6 +114,11 @@ async function setup(hubs = ['DEFAULT', 'OFFICE']) {
 	assert(content.includes(client.passwordHash('download-secret', 'alice')));
 	assert(!page.calls.some(call => call.args.includes('download-secret')));
 	assert.equal(page.modal.length, 0);
+
+	page.view.downloadClient(page.state.users[0]);
+	page.field('client-port').value = '2443'; page.field('client-port').input();
+	await flush();
+	assert.equal(page.field('client-port').value, '2443');
 
 	page = await setup();
 	page.view.editGroup();

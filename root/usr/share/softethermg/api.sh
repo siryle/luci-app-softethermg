@@ -723,8 +723,11 @@ cmd_delete_session() {
 }
 
 cmd_set_server_password() {
-	local new_pass="$1"
-	run_vpncmd "" "ServerPasswordSet $new_pass" >/dev/null 2>&1
+	validate_account_text "$1" || return 1
+	if ! run_vpncmd "" "ServerPasswordSet $(vpncmd_quote "$1")" >/dev/null; then
+		api_error "Unable to change the server administrator password."
+		return 1
+	fi
 	echo '{"jsonrpc":"2.0","result":{},"id":"1"}'
 }
 
@@ -753,17 +756,18 @@ rpc_call() {
 	[ -n "$hub" ] && header_hub="X-VPNADMIN-HUBNAME: $hub"
 
 	local response
+	# Keep JSON payloads, including imported private keys, out of process arguments.
 	if [ -n "$header_hub" ]; then
-		response=$(curl -k -s --connect-timeout 3 -m 8 -X POST "$url" \
+		response=$(printf '%s' "$payload" | curl -k -s --connect-timeout 3 -m 8 -X POST "$url" \
 			-H "Content-Type: application/json" \
 			-H "X-VPNADMIN-PASSWORD: ${pass}" \
 			-H "$header_hub" \
-			-d "$payload" 2>/dev/null)
+			-d @- 2>/dev/null)
 	else
-		response=$(curl -k -s --connect-timeout 3 -m 8 -X POST "$url" \
+		response=$(printf '%s' "$payload" | curl -k -s --connect-timeout 3 -m 8 -X POST "$url" \
 			-H "Content-Type: application/json" \
 			-H "X-VPNADMIN-PASSWORD: ${pass}" \
-			-d "$payload" 2>/dev/null)
+			-d @- 2>/dev/null)
 	fi
 
 	if [ -z "$response" ]; then
@@ -1025,11 +1029,178 @@ se_delete_session() {
 	fi
 }
 
+# --- Server listeners, certificates and configuration backup ---
+validate_listener_port() {
+	case "$1" in ''|*[!0-9]*) api_error "TCP port must be an integer between 1 and 65535." -32602; return 1 ;; esac
+	if [ "${#1}" -gt 5 ] || ! awk -v port="$1" 'BEGIN { exit port < 1 || port > 65535 }'; then
+		api_error "TCP port must be an integer between 1 and 65535." -32602
+		return 1
+	fi
+}
+
+rpc_server_mutation() {
+	local response data error
+	response=$(rpc_call "$1" "$2")
+	error=$(printf '%s' "$response" | jsonfilter -e '@.error')
+	data=$(printf '%s' "$response" | jsonfilter -e '@.result')
+	case "$data" in \{*) ;; *) data='' ;; esac
+	if [ -n "$error" ] || [ -z "$data" ]; then
+		error=$(printf '%s' "$response" | jsonfilter -e '@.error.message')
+		api_error "${error:-The server did not confirm the change.}"
+		return 1
+	fi
+	# SetServerCert may echo the private key; return only an acknowledgement.
+	echo '{"jsonrpc":"2.0","result":{},"id":"1"}'
+}
+
+rpc_server_file() {
+	local response data error
+	response=$(rpc_call "$1" '{}')
+	data=$(printf '%s' "$response" | jsonfilter -e "@.result.$2")
+	error=$(printf '%s' "$response" | jsonfilter -e '@.error')
+	if [ -n "$error" ] || [ -z "$data" ]; then
+		error=$(printf '%s' "$response" | jsonfilter -e '@.error.message')
+		api_error "${error:-Unable to download the requested server file.}"
+		return 1
+	fi
+	printf '{"jsonrpc":"2.0","result":{"%s":%s},"id":"1"}\n' "$2" "$(json_string "$data")"
+}
+
+cmd_server_file() (
+	umask 077
+	server_dir=$(mktemp -d /tmp/softethermg-server.XXXXXX) || { api_error "Unable to create a private temporary directory."; exit 1; }
+	trap 'rm -rf "$server_dir"' 0
+	trap 'exit 1' HUP INT TERM
+	case "$1" in
+		certificate) command=ServerCertGet; field=Cert_bin ;;
+		config) command=ConfigGet; field=FileData_bin ;;
+		*) exit 1 ;;
+	esac
+	if ! run_vpncmd "" "$command $server_dir/export" >/dev/null || [ ! -s "$server_dir/export" ]; then
+		api_error "Unable to export the requested server file. Server administrator access is required."
+		exit 1
+	fi
+	encoded=$(base64 < "$server_dir/export") || { api_error "Unable to encode the server file."; exit 1; }
+	printf '{"jsonrpc":"2.0","result":{"%s":"%s"},"id":"1"}\n' "$field" "$(printf '%s' "$encoded" | tr -d '\r\n')"
+)
+
+se_enum_listeners() {
+	if [ "$(get_api_type)" = vpncmd ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
+		local raw
+		raw=$(run_vpncmd "" ListenerList) || { api_error "Unable to read TCP listeners."; return 1; }
+		printf '%s\n' "$raw" | awk -F, '
+			{ gsub(/\r|"/, "") }
+			$1 == "Port Number" && $2 == "Status" { header = 1; next }
+			header && $1 ~ /^TCP [0-9]+$/ {
+				port = substr($1, 5) + 0
+				if ($2 != "Listening" && $2 != "Stopped" && $2 != "Error") { invalid = 1; next }
+				if (rows != "") rows = rows ","
+				rows = rows "{\"Ports_u32\":" port ",\"Enables_bool\":" ($2 != "Stopped" ? "true" : "false") ",\"Errors_bool\":" ($2 == "Error" ? "true" : "false") "}"
+			}
+			END {
+				if (!header || invalid) { print "{\"error\":{\"code\":-32000,\"message\":\"Unable to parse TCP listener status. Check the vpncmd language (English).\"}}"; exit 1 }
+				print "{\"result\":{\"ListenerList\":[" rows "]}}"
+			}
+		'
+	else
+		rpc_call EnumListener '{}'
+	fi
+}
+
+se_change_listener() {
+	local action="$1" port="$2" enabled="${3:-true}" command method params current_port
+	validate_listener_port "$port" || return 1
+	current_port=$(get_api_port)
+	validate_listener_port "$current_port" || return 1
+	current_port=$(awk -v port="$current_port" 'BEGIN { printf "%d", port }')
+	port=$(awk -v port="$port" 'BEGIN { printf "%d", port }')
+	if { [ "$action" = delete ] || { [ "$action" = set ] && [ "$enabled" = false ]; }; } &&
+		[ "$port" = "$current_port" ]; then
+		api_error "The current management port cannot be disabled or deleted. Connect through another port in Basic Settings first." -32602
+		return 1
+	fi
+	case "$action:$enabled" in
+		create:true) command=ListenerCreate; method=CreateListener ;;
+		set:true) command=ListenerEnable; method=EnableListener ;;
+		set:false) command=ListenerDisable; method=EnableListener ;;
+		delete:*) command=ListenerDelete; method=DeleteListener ;;
+		*) api_error "Invalid listener operation." -32602; return 1 ;;
+	esac
+	if [ "$(get_api_type)" = vpncmd ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
+		if ! run_vpncmd "" "$command $port" >/dev/null; then api_error "Unable to change the TCP listener."; return 1; fi
+		echo '{"result":{}}'
+	else
+		params=$(printf '{"Port_u32":%s,"Enable_bool":%s}' "$port" "$enabled")
+		rpc_server_mutation "$method" "$params"
+	fi
+}
+
+se_get_server_cert() {
+	if [ "$(get_api_type)" = vpncmd ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
+		cmd_server_file certificate
+	else
+		rpc_server_file GetServerCert Cert_bin
+	fi
+}
+
+validate_server_blob() {
+	case "$1" in ''|*[!A-Za-z0-9+/=]*) api_error "Certificate and key must contain valid Base64 data." -32602; return 1 ;; esac
+	local content="${1%=}"
+	content="${content%=}"
+	case "$content" in *=*) api_error "Certificate or key has invalid Base64 padding." -32602; return 1 ;; esac
+	if [ "${#1}" -gt 131072 ] || [ "$((${#1} % 4))" -ne 0 ] ||
+		! printf '%s' "$1" | base64 -d >/dev/null 2>&1; then
+		api_error "Certificate or key is invalid or exceeds 96 KiB." -32602
+		return 1
+	fi
+}
+
+se_set_server_cert() {
+	validate_server_blob "$1" && validate_server_blob "$2" || return 1
+	if [ "$(get_api_type)" = vpncmd ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
+		(
+			umask 077
+			cert_dir=$(mktemp -d /tmp/softethermg-certificate.XXXXXX) || { api_error "Unable to create a private certificate directory."; exit 1; }
+			trap 'rm -rf "$cert_dir"' 0
+			trap 'exit 1' HUP INT TERM
+			printf '%s' "$1" | base64 -d > "$cert_dir/server.crt" || { api_error "Unable to stage the certificate file."; exit 1; }
+			printf '%s' "$2" | base64 -d > "$cert_dir/server.key" || { api_error "Unable to stage the private key file."; exit 1; }
+			if ! run_vpncmd "" "ServerCertSet /LOADCERT:$cert_dir/server.crt /LOADKEY:$cert_dir/server.key" >/dev/null; then
+				api_error "Unable to replace the certificate. Check that the certificate and unencrypted private key match and are supported by SoftEther."
+				exit 1
+			fi
+			echo '{"result":{}}'
+		)
+	else
+		rpc_server_mutation SetServerCert "{\"Cert_bin\":$(json_string "$1"),\"Key_bin\":$(json_string "$2")}"
+	fi
+}
+
+se_regenerate_server_cert() {
+	local name="$1"
+	case "$name" in ''|*[!a-zA-Z0-9._:*-]*) api_error "Common name must be a domain name or IP address." -32602; return 1 ;; esac
+	if [ "${#name}" -gt 253 ]; then api_error "Common name cannot exceed 253 characters." -32602; return 1; fi
+	if [ "$(get_api_type)" = vpncmd ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
+		if ! run_vpncmd "" "ServerCertRegenerate $name" >/dev/null; then api_error "Unable to regenerate the server certificate."; return 1; fi
+		echo '{"result":{}}'
+	else
+		rpc_server_mutation RegenerateServerCert "{\"StrValue_str\":$(json_string "$name")}"
+	fi
+}
+
+se_backup_config() {
+	if [ "$(get_api_type)" = vpncmd ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
+		cmd_server_file config
+	else
+		rpc_server_file GetConfig FileData_bin
+	fi
+}
+
 se_set_server_password() {
 	local new_pass="$1"
 	if [ "$(get_api_type)" = "vpncmd" ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
 		cmd_set_server_password "$new_pass"
 	else
-		rpc_call "SetServerPassword" "{\"PlainTextPassword_str\":\"$new_pass\"}"
+		rpc_server_mutation "SetServerPassword" "{\"PlainTextPassword_str\":$(json_string "$new_pass")}"
 	fi
 }

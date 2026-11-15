@@ -63,7 +63,12 @@ run_vpncmd() {
 curl() {
     while [ "$#" -gt 0 ]; do
         if [ "$1" = -d ]; then
-            printf '%s' "$2" > "$TEST_PAYLOAD"
+            if [ "$2" = @- ]; then
+                payload=$(awk '{ printf "%s", $0 }')
+                printf '%s' "$payload" > "$TEST_PAYLOAD"
+            else
+                printf '%s' "$2" > "$TEST_PAYLOAD"
+            fi
             shift
         fi
         shift

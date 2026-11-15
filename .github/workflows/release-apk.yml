@@ -53,6 +53,9 @@ jobs:
           export SOFTETHERMG_TEST_JSHN_DIR
           python3 scripts/test-accounts.py
           node scripts/test-users-ui.js
+          python3 scripts/test-server.py
+          node scripts/test-server-ui.js
+          node --check htdocs/luci-static/resources/view/softethermg/server.js
           node --check htdocs/luci-static/resources/view/softethermg/users.js
           node --check htdocs/luci-static/resources/view/softethermg/client.js
           node --check htdocs/luci-static/resources/view/softethermg/protocols.js

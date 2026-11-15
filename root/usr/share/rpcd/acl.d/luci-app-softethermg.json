@@ -12,7 +12,9 @@
 					"get_nat",
 					"get_ipsec",
 					"get_openvpn",
-					"enum_sessions"
+					"enum_sessions",
+					"enum_listeners",
+					"get_server_cert"
 				]
 			},
 			"uci": [
@@ -38,6 +40,12 @@
 					"set_openvpn",
 					"make_openvpn_config",
 					"kill_session",
+					"create_listener",
+					"set_listener",
+					"delete_listener",
+					"set_server_cert",
+					"regenerate_server_cert",
+					"backup_config",
 					"change_admin_password"
 				]
 			},
