@@ -39,10 +39,11 @@ return view.extend({
 		const isRunning = !statusRes.error && statusRes.result;
 		const s = statusRes.result || {};
 		const hubs = hubsRes.result?.HubList || [];
+		const isConnected = isRunning || hubs.length > 0;
 
 		const content = E('div', { 'class': 'cbi-map' }, [
 			E('h2', {}, _('SoftEther VPN 服务管理')),
-			E('div', { 'class': 'cbi-map-descr' }, _('面向 OpenWrt 的轻量级可视化面板，基于本地 JSON-RPC 2.0 API 直连，零常驻内存。')),
+			E('div', { 'class': 'cbi-map-descr' }, _('面向 OpenWrt 的轻量级可视化面板，基于本地命令行与 JSON-RPC 直连，零常驻内存。')),
 
 			// 状态概览卡片
 			E('div', { 'class': 'cbi-section' }, [
@@ -54,17 +55,22 @@ return view.extend({
 							isRunning
 								? E('span', { 'style': 'display:inline-flex; align-items:center; gap:6px; font-weight:600; color:#10b981;' }, [
 									E('span', { 'style': 'width:7px; height:7px; border-radius:50%; background:#10b981; display:inline-block;' }),
-									_('Active (运行中 / API在线)')
+									_('Active (运行中 / 服务在线)')
 								])
-								: E('span', { 'style': 'display:inline-flex; align-items:center; gap:6px; font-weight:600; color:#ef4444;' }, [
-									E('span', { 'style': 'width:7px; height:7px; border-radius:50%; background:#ef4444; display:inline-block;' }),
-									_('未连接 (检查端口或密码)')
-								])
+								: (hubs.length > 0
+									? E('span', { 'style': 'display:inline-flex; align-items:center; gap:6px; font-weight:600; color:#f59e0b;' }, [
+										E('span', { 'style': 'width:7px; height:7px; border-radius:50%; background:#f59e0b; display:inline-block;' }),
+										_('在线 (已连接服务，请在【基本设置】配置管理员密码)')
+									])
+									: E('span', { 'style': 'display:inline-flex; align-items:center; gap:6px; font-weight:600; color:#ef4444;' }, [
+										E('span', { 'style': 'width:7px; height:7px; border-radius:50%; background:#ef4444; display:inline-block;' }),
+										_('未连接 (检查端口或密码)')
+									]))
 						])
 					]),
 					E('div', { 'class': 'cbi-value' }, [
 						E('label', { 'class': 'cbi-value-title' }, _('服务端版本')),
-						E('div', { 'class': 'cbi-value-field', 'style': 'font-family:monospace;' }, s.ServerVersionString_str || (isRunning ? _('未知') : '-'))
+						E('div', { 'class': 'cbi-value-field', 'style': 'font-family:monospace;' }, s.ServerVersionString_str || (isConnected ? _('未知') : '-'))
 					]),
 					E('div', { 'class': 'cbi-value' }, [
 						E('label', { 'class': 'cbi-value-title' }, _('构建版本信息')),

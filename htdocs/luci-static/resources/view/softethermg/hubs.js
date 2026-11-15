@@ -101,16 +101,20 @@ return view.extend({
 			E('div', { 'class': 'cbi-section' }, [
 				E('div', { 'class': 'cbi-section-node' }, [
 					E('table', { 'class': 'table cbi-section-table' }, [
-						E('tr', { 'class': 'tr table-titles' }, [
-							E('th', { 'class': 'th' }, _('HUB 名称')),
-							E('th', { 'class': 'th' }, _('运行状态')),
-							E('th', { 'class': 'th' }, _('注册用户数')),
-							E('th', { 'class': 'th' }, _('当前会话')),
-							E('th', { 'class': 'th' }, _('总数据交换量')),
-							E('th', { 'class': 'th cbi-section-actions' }, _('操作'))
+						E('thead', {}, [
+							E('tr', { 'class': 'tr table-titles' }, [
+								E('th', { 'class': 'th' }, _('HUB 名称')),
+								E('th', { 'class': 'th' }, _('运行状态')),
+								E('th', { 'class': 'th' }, _('注册用户数')),
+								E('th', { 'class': 'th' }, _('当前会话')),
+								E('th', { 'class': 'th' }, _('总数据交换量')),
+								E('th', { 'class': 'th cbi-section-actions' }, _('操作'))
+							])
 						]),
-						tableRows.length > 0 ? tableRows : E('tr', { 'class': 'tr' }, [
-							E('td', { 'class': 'td', 'colspan': 6, 'style': 'text-align:center;' }, _('暂无虚拟 HUB 或无法连接服务端'))
+						E('tbody', {}, tableRows.length > 0 ? tableRows : [
+							E('tr', { 'class': 'tr' }, [
+								E('td', { 'class': 'td', 'colspan': 6, 'style': 'text-align:center;' }, _('暂无虚拟 HUB 或无法连接服务端'))
+							])
 						])
 					]),
 					E('div', { 'class': 'cbi-section-create' }, [

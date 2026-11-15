@@ -83,14 +83,15 @@ run_vpncmd() {
 
 # --- Server Status via vpncmd ---
 cmd_get_server_status() {
-	local raw
-	raw=$(run_vpncmd "" "ServerStatusGet")
-	if [ -z "$raw" ]; then
+	local raw info_raw
+	raw=$(run_vpncmd "" "ServerStatusGet" 2>/dev/null)
+	info_raw=$(run_vpncmd "" "ServerInfoGet" 2>/dev/null)
+	if [ -z "$raw" ] && [ -z "$info_raw" ]; then
 		echo '{"jsonrpc":"2.0","error":{"code":-32000,"message":"vpncmd execution failed or server unreachable"},"id":"1"}'
 		return 1
 	fi
 
-	echo "$raw" | awk '
+	printf '%s\n%s\n' "$raw" "$info_raw" | awk '
 	BEGIN {
 		print "{\"jsonrpc\":\"2.0\",\"result\":{"
 		first = 1
@@ -98,7 +99,7 @@ cmd_get_server_status() {
 	{
 		sub(/\r$/, "")
 		idx = index($0, ",")
-		if (idx > 0 && $1 != "Item") {
+		if (idx > 0) {
 			k = substr($0, 1, idx - 1)
 			v = substr($0, idx + 1)
 			gsub(/^"|"$/, "", k)
@@ -106,21 +107,22 @@ cmd_get_server_status() {
 
 			jk = ""
 			if (k == "Server Type") jk = "ServerType_str"
-			else if (k == "Server Version String") jk = "ServerVersionString_str"
-			else if (k == "Server Build Info String") jk = "ServerBuildInfoString_str"
+			else if (k == "Server Version String" || k == "Version") jk = "ServerVersionString_str"
+			else if (k == "Server Build Info String" || k == "Build") jk = "ServerBuildInfoString_str"
+			else if (k == "Product Name") jk = "ProductName_str"
 			else if (k == "Number of Virtual Hubs") jk = "NumHub_u32"
 			else if (k == "Number of Sessions") jk = "NumSessions_u32"
 			else if (k == "Number of Users") jk = "NumUsers_u32"
-			else if (k ~ /Incoming.*Total Size/) {
+			else if (k ~ /Incoming.*Total Size/ || k ~ /Total Size of Incoming.*Packets/) {
 				gsub(/[^0-9]/, "", v)
 				jk = "Recv.BroadcastBytes_u64"
 			}
-			else if (k ~ /Outgoing.*Total Size/) {
+			else if (k ~ /Outgoing.*Total Size/ || k ~ /Total Size of Outgoing.*Packets/) {
 				gsub(/[^0-9]/, "", v)
 				jk = "Send.BroadcastBytes_u64"
 			}
 
-			if (jk != "") {
+			if (jk != "" && !seen[jk]++) {
 				if (!first) printf ","
 				first = 0
 				if (jk ~ /_u32$/ || jk ~ /_u64$/) {
