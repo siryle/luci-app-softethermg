@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-softethermg
-PKG_VERSION:=1.0.14
+PKG_VERSION:=1.0.15
 PKG_RELEASE:=1
 
 LUCI_TITLE:=LuCI support for SoftEther VPN Server Manager

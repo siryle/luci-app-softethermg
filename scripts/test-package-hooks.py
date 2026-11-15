@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tarfile
@@ -18,7 +19,7 @@ OBJECT = 'luci.softethermg'
 
 class PackageHookTests(unittest.TestCase):
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory(prefix='softethermg-hook-tests-')
+        self.directory = tempfile.TemporaryDirectory(prefix='softethermg-hook-tests-', dir='/tmp')
         self.addCleanup(self.directory.cleanup)
         self.path = Path(self.directory.name)
         self.log = self.path / 'events'
@@ -41,7 +42,7 @@ printf 'defaults\\n' >> "$TEST_LOG"
         (cache / 'luci-modulecache').mkdir(parents=True)
         for name in ('luci-indexcache', 'luci-indexcache.12345678.json', 'luci-modulecache/module', 'unrelated-file'):
             (cache / name).write_text('cached')
-        source = HOOK.read_text().replace('/etc/', str(self.path / 'etc') + '/').replace('/tmp/', str(cache) + '/')
+        source = re.sub(r'/(etc|tmp)/', lambda match: str(self.path / match.group(1)) + '/', HOOK.read_text())
         subprocess.run(['sh', '-c', source], env={**self.env, 'IPKG_INSTROOT': str(self.path / 'image') if offline else '',
                                                 'TEST_RELOAD_FAIL': '1' if reload_fails else '0'}, check=True)
         return cache
