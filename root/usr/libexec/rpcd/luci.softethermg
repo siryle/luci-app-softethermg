@@ -46,6 +46,8 @@ case "$1" in
 			"create_group": {"hub": "str", "name": "str", "realname": "str", "note": "str"},
 			"set_group": {"hub": "str", "name": "str", "realname": "str", "note": "str"},
 			"delete_group": {"hub": "str", "name": "str"},
+			"get_policy": {"kind": "str", "hub": "str", "name": "str"},
+			"set_policy": {"kind": "str", "hub": "str", "name": "str", "enabled": "bool", "values": "str"},
 			"get_nat": {"hub": "str"},
 			"set_nat": {"hub": "str", "use_nat": "bool", "use_dhcp": "bool", "ip": "str", "mask": "str", "dhcp_start": "str", "dhcp_end": "str", "dhcp_mask": "str", "gateway": "str", "dns": "str"},
 			"toggle_nat": {"hub": "str", "enable": "bool"},
@@ -202,6 +204,21 @@ case "$1" in
 				hub=$(parse_json "$input" '@.hub')
 				name=$(parse_json "$input" '@.name')
 				se_delete_group "${hub:-DEFAULT}" "$name"
+				;;
+
+			get_policy|set_policy)
+				read -r input
+				kind=$(parse_json "$input" '@.kind')
+				hub=$(parse_json "$input" '@.hub')
+				name=$(parse_json "$input" '@.name')
+				if [ "$2" = get_policy ]; then
+					se_get_policy "$kind" "${hub:-DEFAULT}" "$name"
+				else
+					enabled=$(parse_json "$input" '@.enabled')
+					values=$(parse_json "$input" '@.values')
+					[ -n "$values" ] || values='{}'
+					se_set_policy "$kind" "${hub:-DEFAULT}" "$name" "$enabled" "$values"
+				fi
 				;;
 
 			get_nat)

@@ -43,11 +43,11 @@ async function setup(hubs = ['DEFAULT', 'OFFICE']) {
 		delete_group: (hub, name) => { state.groups = state.groups.filter(group => group.Name_str !== name); return { result: {} }; },
 		set_user_pass: () => ({ result: {} })
 	};
-	const view = new Function('view', 'rpc', 'ui', 'uci', 'client', '_', 'E', 'location', 'URL', 'document', 'setTimeout', 'confirm', source)(
+	const view = new Function('view', 'rpc', 'ui', 'uci', 'client', 'policy', '_', 'E', 'location', 'URL', 'document', 'setTimeout', 'confirm', source)(
 		{ extend: value => value },
 		{ declare: ({ method }) => (...args) => { calls.push({ method, args }); return Promise.resolve().then(() => (overrides[method] || handlers[method])(...args)); } },
 		{ showModal: (title, nodes) => { modal = nodes; }, hideModal: () => { modal = []; }, addNotification: (_, message) => notices.push(text(message)) },
-		{ load: () => Promise.resolve(), get: () => '198.51.100.8' }, client, value => value, E,
+		{ load: () => Promise.resolve(), get: () => '198.51.100.8' }, client, { open() {} }, value => value, E,
 		{ hostname: 'router.example' }, { createObjectURL: blob => { blobs.push(blob); return 'blob:test'; }, revokeObjectURL() {} },
 		{ body: E('body') }, callback => callback(), () => true
 	);

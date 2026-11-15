@@ -74,22 +74,13 @@ find_vpncmd() {
 # 1. vpncmd Native CLI Engine
 # ===========================================================================
 
-run_vpncmd() (
+run_vpncmd_file() (
 	hub="$1"
-	shift
-	cmd="$*"
-	# /IN preserves SoftEther quoting; passing a split /CMD string corrupts it.
-	case "$cmd" in *[[:cntrl:]]*) return 1 ;; esac
+	command_file="$2"
 	vcmd=$(find_vpncmd)
 	host=$(get_api_host)
 	port=$(get_api_port)
 	pass=$(get_admin_password)
-	umask 077
-	command_file=$(mktemp /tmp/softethermg-command.XXXXXX) || return 1
-	trap 'rm -f "$command_file"' 0
-	trap 'exit 1' HUP INT TERM
-	printf '%s\n' "$cmd" > "$command_file" || return 1
-
 	set -- "${host}:${port}" /SERVER "/PASSWORD:$pass" /CSV "/IN:$command_file"
 	[ -z "$hub" ] || set -- "$@" "/HUB:$hub"
 	if [ -f "$vcmd" ]; then
@@ -100,6 +91,19 @@ run_vpncmd() (
 	fi
 )
 
+run_vpncmd() (
+	hub="$1"
+	shift
+	cmd="$*"
+	# /IN preserves SoftEther quoting; passing a split /CMD string corrupts it.
+	case "$cmd" in *[[:cntrl:]]*) return 1 ;; esac
+	umask 077
+	command_file=$(mktemp /tmp/softethermg-command.XXXXXX) || return 1
+	trap 'rm -f "$command_file"' 0
+	trap 'exit 1' HUP INT TERM
+	printf '%s\n' "$cmd" > "$command_file" || return 1
+	run_vpncmd_file "$hub" "$command_file"
+)
 # --- Server Status via vpncmd ---
 cmd_get_server_status() {
 	local raw info_raw banner
@@ -395,35 +399,37 @@ cmd_delete_user() {
 }
 
 # Read before editing so authentication, expiry and every policy field survive.
-rpc_update_account() (
-	kind="$1"; hub="$2"; name="$3"; action="$4"
+rpc_load_account() {
+	local kind="$1" hub="$2" name="$3" response data error account_json record_name policy_type auth_field_type keys key wire type value
 	response=$(rpc_call "Get$kind" "{\"HubName_str\":$(json_string "$hub"),\"Name_str\":$(json_string "$name")}")
 	data=$(printf '%s' "$response" | jsonfilter -e '@.result')
-	if [ -z "$data" ] || [ "$data" = null ]; then
-		printf '%s\n' "$response"
-		exit 1
+	error=$(printf '%s' "$response" | jsonfilter -e '@.error')
+	if [ -n "$error" ] || [ -z "$data" ] || [ "$data" = null ]; then
+		error=$(printf '%s' "$response" | jsonfilter -e '@.error.message')
+		api_error "${error:-Unable to read the existing account settings.}"
+		return 1
 	fi
-	[ -r /usr/share/libubox/jshn.sh ] || { api_error "The OpenWrt jshn package is required to preserve existing account settings."; exit 1; }
+	[ -r /usr/share/libubox/jshn.sh ] || { api_error "The OpenWrt jshn package is required to preserve existing account settings."; return 1; }
 	. /usr/share/libubox/jshn.sh
-	json_load "$data" || { api_error "Unable to read the existing account settings."; exit 1; }
+	account_json=$(jshn -r "$data" 2>/dev/null) || { api_error "Unable to read the existing account settings."; return 1; }
+	eval "$account_json"
 	json_get_var record_name Name_str
 	json_get_type policy_type UsePolicy_bool
+	if [ -z "$policy_type" ]; then
+		json_get_keys keys
+		for key in $keys; do
+			case "$key" in policy_*) api_error "Policy fields were returned without an explicit policy mode."; return 1 ;; esac
+		done
+		json_add_boolean UsePolicy_bool 0
+		policy_type=boolean
+	fi
 	if [ "$record_name" != "$name" ] || [ "$policy_type" != boolean ]; then
 		api_error "The server returned an incomplete account record; no changes were written."
-		exit 1
+		return 1
 	fi
 	if [ "$kind" = User ]; then
 		json_get_type auth_field_type AuthType_u32
-		if [ "$auth_field_type" != int ]; then api_error "Authentication type is missing; no changes were written."; exit 1; fi
-	fi
-	if [ "$kind:$action" = User:info ]; then
-		json_get_var auth_type AuthType_u32
-		case "$auth_type" in
-			1) json_get_var credential HashedKey_bin ;;
-			2) json_get_var credential UserX_bin ;;
-			*) credential=not-required ;;
-		esac
-		if [ -z "$credential" ]; then api_error "Authentication data is missing; refusing to overwrite the user."; exit 1; fi
+		if [ "$auth_field_type" != int ]; then api_error "Authentication type is missing; no changes were written."; return 1; fi
 	fi
 	# jshn normalizes punctuation on input; restore SoftEther wire field names.
 	json_get_keys keys
@@ -438,6 +444,24 @@ rpc_update_account() (
 		json_get_var value "$key"
 		case "$type" in int|boolean) "json_add_$type" "$wire" "$value" ;; esac
 	done
+}
+
+rpc_require_account_auth() {
+	local auth_type credential
+	[ "$1" = User ] || return 0
+	json_get_var auth_type AuthType_u32
+	case "$auth_type" in
+		1) json_get_var credential HashedKey_bin ;;
+		2) json_get_var credential UserX_bin ;;
+		*) credential=not-required ;;
+	esac
+	if [ -z "$credential" ]; then api_error "Authentication data is missing; refusing to overwrite the user."; return 1; fi
+}
+
+rpc_update_account() (
+	kind="$1"; hub="$2"; name="$3"; action="$4"
+	rpc_load_account "$kind" "$hub" "$name" || exit 1
+	if [ "$action" != password ]; then rpc_require_account_auth "$kind" || exit 1; fi
 	json_add_string HubName_str "$hub"
 	json_add_string Name_str "$name"
 	if [ "$action" = password ]; then
@@ -450,7 +474,7 @@ rpc_update_account() (
 		json_add_string Note_utf "$6"
 		[ "$kind" != User ] || json_add_string GroupName_str "$7"
 	fi
-	rpc_call "Set$kind" "$(json_dump)"
+	rpc_server_mutation "Set$kind" "$(json_dump)"
 )
 
 se_enum_groups() {
@@ -873,7 +897,7 @@ se_create_user() {
 		local use_policy="false"
 		[ "$max_up" -gt 0 ] || [ "$max_down" -gt 0 ] || [ "$multi" -gt 0 ] && use_policy="true"
 		local params
-		params=$(printf '{"HubName_str":%s,"Name_str":%s,"GroupName_str":%s,"AuthType_u32":1,"Auth_Password_str":%s,"Realname_utf":%s,"Note_utf":%s,"ExpireTime_dt":%s,"UsePolicy_bool":%s,"policy:Access_bool":true,"policy:MaxUpload_u32":%s,"policy:MaxDownload_u32":%s,"policy:MultiLogins_u32":%s}' \
+		params=$(printf '{"HubName_str":%s,"Name_str":%s,"GroupName_str":%s,"AuthType_u32":1,"Auth_Password_str":%s,"Realname_utf":%s,"Note_utf":%s,"ExpireTime_dt":%s,"UsePolicy_bool":%s,"policy:Access_bool":true,"policy:MaxConnection_u32":32,"policy:TimeOut_u32":20,"policy:Ver3_bool":true,"policy:MaxUpload_u32":%s,"policy:MaxDownload_u32":%s,"policy:MultiLogins_u32":%s}' \
 			"$(json_string "$hub")" "$(json_string "$user")" "$(json_string "$group")" "$(json_string "$pass")" "$(json_string "$realname")" "$(json_string "$note")" "$(json_string "$expire_dt")" "$use_policy" "$(printf '%s' "$max_up" | awk '{printf "%.0f", $0 + 0}')" "$(printf '%s' "$max_down" | awk '{printf "%.0f", $0 + 0}')" "$(printf '%s' "$multi" | awk '{printf "%.0f", $0 + 0}')")
 		rpc_call "CreateUser" "$params"
 	fi
@@ -1195,6 +1219,16 @@ se_backup_config() {
 		rpc_server_file GetConfig FileData_bin
 	fi
 }
+
+se_get_policy() (
+	. /usr/share/softethermg/policy.sh
+	policy_get "$@"
+)
+
+se_set_policy() (
+	. /usr/share/softethermg/policy.sh
+	policy_set "$@"
+)
 
 se_set_server_password() {
 	local new_pass="$1"

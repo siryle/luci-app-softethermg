@@ -4,6 +4,7 @@
 'require ui';
 'require uci';
 'require view.softethermg.client as client';
+'require view.softethermg.policy as policy';
 
 const declare = (method, params = []) => rpc.declare({ object: 'luci.softethermg', method, params, expect: { '': {} } });
 const callHubs = declare('enum_hubs');
@@ -131,6 +132,7 @@ return view.extend({
 				...([user.Name_str, authLabels[user.AuthType_u32] || _('未知认证'), user.GroupName_str || '-', `${user.Realname_utf || '-'} / ${user.Note_utf || '-'}`, String(user.NumLogin_u32 || 0), formatBytes(bytes)].map(value => E('td', { 'class': 'td' }, value))),
 				E('td', { 'class': 'td cbi-section-actions' }, [
 					E('button', { 'type': 'button', 'class': 'cbi-button cbi-button-edit', click: () => this.editUser(user) }, _('编辑')),
+					' ', E('button', { 'type': 'button', 'class': 'cbi-button cbi-button-action', click: () => policy.open('user', this.currentHub, user.Name_str, () => this.refresh()) }, _('安全策略')),
 					' ', E('button', { 'type': 'button', 'class': 'cbi-button cbi-button-action', click: () => this.downloadClient(user) }, _('下载 .vpn')),
 					' ', E('button', { 'type': 'button', 'class': 'cbi-button cbi-button-action', click: () => this.resetPassword(user) }, _('重置密码')),
 					' ', E('button', { 'type': 'button', 'class': 'cbi-button cbi-button-remove', click: event => {
@@ -146,6 +148,7 @@ return view.extend({
 			...[group.Name_str, `${group.Realname_utf || '-'} / ${group.Note_utf || '-'}`, String(group.NumUsers_u32 || 0)].map(value => E('td', { 'class': 'td' }, value)),
 			E('td', { 'class': 'td cbi-section-actions' }, [
 				E('button', { 'type': 'button', 'class': 'cbi-button cbi-button-edit', click: () => this.editGroup(group) }, _('编辑用户组')),
+				' ', E('button', { 'type': 'button', 'class': 'cbi-button cbi-button-action', click: () => policy.open('group', this.currentHub, group.Name_str, () => this.refresh()) }, _('安全策略')),
 				' ', E('button', { 'type': 'button', 'class': 'cbi-button cbi-button-remove', click: event => {
 					const hub = this.currentHub;
 					if (confirm(_('确定删除用户组 %s 吗？成员账号会保留，并解除组成员关系。').format(group.Name_str)))
@@ -214,7 +217,7 @@ return view.extend({
 		} }, _('保存用户组'));
 		ui.showModal(group ? _('编辑用户组') : _('添加用户组'), [
 			field(_('组名'), name), field(_('姓名'), realname), field(_('备注'), note),
-			E('p', {}, _('已有组策略将保留。组策略的详细编辑仍需使用 SoftEther 管理工具。')),
+			E('p', {}, _('已有组策略会保留，可在用户组列表中点击“安全策略”修改。')),
 			E('div', { 'class': 'right' }, [E('button', { 'type': 'button', 'class': 'cbi-button', click: ui.hideModal }, _('取消')), ' ', save])
 		]);
 	},

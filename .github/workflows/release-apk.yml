@@ -52,6 +52,10 @@ jobs:
           SOFTETHERMG_TEST_JSHN_DIR="$(bash scripts/prepare-json-tests.sh)"
           export SOFTETHERMG_TEST_JSHN_DIR
           python3 scripts/test-accounts.py
+          python3 scripts/test-policy.py
+          node scripts/test-policy-ui.js
+          node --check htdocs/luci-static/resources/view/softethermg/policy.js
+          sh -n root/usr/share/softethermg/policy.sh
           node scripts/test-users-ui.js
           python3 scripts/test-server.py
           node scripts/test-server-ui.js

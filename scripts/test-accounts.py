@@ -122,6 +122,9 @@ print(json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else v
         self.assertEqual(payload['policy:MaxUpload_u32'], 8)
         self.assertTrue(payload['UsePolicy_bool'])
         self.assertTrue(payload['policy:Access_bool'])
+        self.assertEqual(payload['policy:MaxConnection_u32'], 32)
+        self.assertEqual(payload['policy:TimeOut_u32'], 20)
+        self.assertTrue(payload['policy:Ver3_bool'])
 
     def test_invalid_limits_and_option_injection_do_not_write(self):
         for value in ('-1', 'abc', '2147483648', '99999999999999999999999999999'):

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-VERSION="${1:-1.0.12}"
+VERSION="${1:-1.0.13}"
 RELEASE="1"
 PKG_NAME="luci-app-softethermg"
 DIST_DIR="${PWD}/release-assets"
