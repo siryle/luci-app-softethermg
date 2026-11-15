@@ -34,6 +34,13 @@ return view.extend({
 		o.default = 'vpncmd';
 		o.rmempty = false;
 
+		// vpncmd 路径
+		o = s.option(form.Value, 'vpncmd_path', _('vpncmd 可执行文件路径'),
+			_('系统上 vpncmd 程序的完整路径。默认自动探测（如 /usr/libexec/softethervpn/vpncmd）。'));
+		o.default = '/usr/libexec/softethervpn/vpncmd';
+		o.depends('api_type', 'vpncmd');
+		o.rmempty = true;
+
 		// 启用服务开关
 		o = s.option(form.Flag, 'enabled', _('启用面板功能'),
 			_('是否启用本面板与后台的连接。'));

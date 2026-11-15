@@ -10,8 +10,21 @@ parse_json() {
 	if command -v jsonfilter >/dev/null 2>&1; then
 		echo "$json" | jsonfilter -e "$expr"
 	else
-		# Fallback for environments without jsonfilter
-		python3 -c "import sys, json; d=json.loads(sys.argv[1]); print(eval(sys.argv[2]))" "$json" "d${expr#@}" 2>/dev/null || echo ""
+		# Pure POSIX awk fallback without python dependency
+		local key="${expr#@.}"
+		echo "$json" | awk -v k="$key" '
+			BEGIN { RS="[,{}\\[\\]]"; FS=":" }
+			{
+				gsub(/^[ \t\r\n]+|[ \t\r\n]+$/, "", $1)
+				gsub(/^"|"$/, "", $1)
+				if ($1 == k) {
+					sub(/^[ \t\r\n]+/, "", $2)
+					gsub(/^"|"$/, "", $2)
+					print $2
+					exit
+				}
+			}
+		'
 	fi
 }
 

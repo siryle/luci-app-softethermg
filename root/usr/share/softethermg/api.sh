@@ -29,7 +29,13 @@ get_admin_password() {
 }
 
 find_vpncmd() {
-	if [ -x "/usr/bin/vpncmd" ]; then
+	local configured_path
+	configured_path=$(get_config_value "vpncmd_path" "")
+	if [ -n "$configured_path" ] && [ -x "$configured_path" ]; then
+		echo "$configured_path"
+	elif [ -x "/usr/libexec/softethervpn/vpncmd" ]; then
+		echo "/usr/libexec/softethervpn/vpncmd"
+	elif [ -x "/usr/bin/vpncmd" ]; then
 		echo "/usr/bin/vpncmd"
 	elif command -v vpncmd >/dev/null 2>&1; then
 		command -v vpncmd

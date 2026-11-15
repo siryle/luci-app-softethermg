@@ -35,7 +35,6 @@ jobs:
           else
             TAG="v1.0.0"
           fi
-          # Strip leading 'v'
           VERSION="${TAG#v}"
           [ -z "$VERSION" ] && VERSION="1.0.0"
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
@@ -43,131 +42,13 @@ jobs:
 
       - name: Build Project Packages (.apk and .ipk)
         run: |
-          mkdir -p release-assets
-          VERSION="${{ steps.ver.outputs.version }}"
-          RELEASE="1"
-          PKG_NAME="luci-app-softethermg"
-
-          # 1. Run inside Alpine Docker to generate modern APK package
-          docker run --rm -v "${PWD}:/work" -w /work alpine:edge sh -c "
-            apk add --no-cache apk-tools tar gzip
-
-            STAGING_DIR=\$(mktemp -d)
-            mkdir -p \"\$STAGING_DIR/etc/config\"
-            mkdir -p \"\$STAGING_DIR/etc/init.d\"
-            mkdir -p \"\$STAGING_DIR/etc/uci-defaults\"
-            mkdir -p \"\$STAGING_DIR/usr/libexec/rpcd\"
-            mkdir -p \"\$STAGING_DIR/usr/share/luci/menu.d\"
-            mkdir -p \"\$STAGING_DIR/usr/share/rpcd/acl.d\"
-            mkdir -p \"\$STAGING_DIR/usr/share/softethermg\"
-            mkdir -p \"\$STAGING_DIR/www/luci-static/resources/view/softethermg\"
-
-            cp -r root/etc/* \"\$STAGING_DIR/etc/\"
-            cp -r root/usr/* \"\$STAGING_DIR/usr/\"
-            cp -r htdocs/luci-static/resources/view/softethermg/* \"\$STAGING_DIR/www/luci-static/resources/view/softethermg/\"
-
-            chmod +x \"\$STAGING_DIR/etc/init.d/softethermg\"
-            chmod +x \"\$STAGING_DIR/usr/share/softethermg/api.sh\"
-            chmod +x \"\$STAGING_DIR/usr/libexec/rpcd/luci.softethermg\"
-
-            # Generate modern OpenWrt APKv3 package
-            apk mkpkg \
-              --info name:${PKG_NAME} \
-              --info version:${VERSION}-r${RELEASE} \
-              --info arch:all \
-              --info description:\"LuCI support for SoftEther VPN Server Manager\" \
-              --info url:\"https://github.com/siryle/luci-app-softethermg\" \
-              --info license:GPL-3.0 \
-              --info depends:\"softether-vpnserver curl jsonfilter\" \
-              --files \"\$STAGING_DIR\" \
-              --output \"release-assets/${PKG_NAME}-${VERSION}-r${RELEASE}.apk\"
-
-            rm -rf \"\$STAGING_DIR\"
-          "
-
-          # 2. Build legacy OPKG IPK package (for backward compatibility on OpenWrt 21/22/23)
-          STAGING_DIR=$(mktemp -d)
-          IPK_DIR=$(mktemp -d)
-          mkdir -p "$STAGING_DIR/etc/config" "$STAGING_DIR/etc/init.d" "$STAGING_DIR/etc/uci-defaults"
-          mkdir -p "$STAGING_DIR/usr/libexec/rpcd" "$STAGING_DIR/usr/share/luci/menu.d" "$STAGING_DIR/usr/share/rpcd/acl.d"
-          mkdir -p "$STAGING_DIR/usr/share/softethermg" "$STAGING_DIR/www/luci-static/resources/view/softethermg"
-
-          cp -r root/etc/* "$STAGING_DIR/etc/"
-          cp -r root/usr/* "$STAGING_DIR/usr/"
-          cp -r htdocs/luci-static/resources/view/softethermg/* "$STAGING_DIR/www/luci-static/resources/view/softethermg/"
-
-          chmod +x "$STAGING_DIR/etc/init.d/softethermg"
-          chmod +x "$STAGING_DIR/usr/share/softethermg/api.sh"
-          chmod +x "$STAGING_DIR/usr/libexec/rpcd/luci.softethermg"
-
-          echo "2.0" > "$IPK_DIR/debian-binary"
-          mkdir -p "$IPK_DIR/control"
-          cat << EOF > "$IPK_DIR/control/control"
-Package: $PKG_NAME
-Version: $VERSION-$RELEASE
-Depends: softether-vpnserver, curl, jsonfilter
-Section: luci
-Architecture: all
-Maintainer: Sean <siryle1213@gmail.com>
-Description: LuCI support for SoftEther VPN Server Manager
-EOF
-          echo "/etc/config/softethermg" > "$IPK_DIR/control/conffiles"
-
-          (cd "$IPK_DIR/control" && tar -czf "$IPK_DIR/control.tar.gz" ./*)
-          (cd "$STAGING_DIR" && tar -czf "$IPK_DIR/data.tar.gz" ./*)
-          (cd "$IPK_DIR" && tar -czf "$GITHUB_WORKSPACE/release-assets/${PKG_NAME}_${VERSION}-${RELEASE}_all.ipk" debian-binary control.tar.gz data.tar.gz)
-
-          rm -rf "$STAGING_DIR" "$IPK_DIR"
+          chmod +x scripts/build-packages.sh
+          bash scripts/build-packages.sh "${{ steps.ver.outputs.version }}"
 
       - name: Fetch Dependency APKs (aarch64 & x86_64)
         run: |
-          fetch_arch_deps() {
-            local arch="$1"
-            local zip_name="$2"
-            local out_dir="/tmp/deps_${arch}"
-            mkdir -p "$out_dir"
-
-            local base_url="https://downloads.openwrt.org/snapshots/packages/${arch}"
-            echo "Fetching dependencies for ${arch} from ${base_url}..."
-
-            local pkgs_html
-            local base_html
-            pkgs_html=$(curl -s -L "${base_url}/packages/" || true)
-            base_html=$(curl -s -L "${base_url}/base/" || true)
-
-            # SoftEther packages
-            local se_server se_base
-            se_server=$(echo "$pkgs_html" | grep -oE 'softethervpn-server-[^"]*\.apk' | head -n 1 || true)
-            se_base=$(echo "$pkgs_html" | grep -oE 'softethervpn-base-[^"]*\.apk' | head -n 1 || true)
-
-            # jsonfilter
-            local jsonfilter
-            jsonfilter=$(echo "$base_html" | grep -oE 'jsonfilter-[^"]*\.apk' | head -n 1 || true)
-
-            # curl & libcurl
-            local curl_pkg libcurl_pkg
-            curl_pkg=$(echo "$pkgs_html" | grep -oE 'curl-[0-9][^"]*\.apk' | head -n 1 || true)
-            libcurl_pkg=$(echo "$pkgs_html" | grep -oE 'libcurl4-[0-9][^"]*\.apk' | head -n 1 || true)
-
-            for p in "$se_server" "$se_base" "$curl_pkg" "$libcurl_pkg"; do
-              if [ -n "$p" ]; then
-                echo "Downloading ${p}..."
-                curl -s -L -o "${out_dir}/${p}" "${base_url}/packages/${p}" || true
-              fi
-            done
-
-            if [ -n "$jsonfilter" ]; then
-              echo "Downloading ${jsonfilter}..."
-              curl -s -L -o "${out_dir}/${jsonfilter}" "${base_url}/base/${jsonfilter}" || true
-            fi
-
-            (cd "$out_dir" && zip -r "$GITHUB_WORKSPACE/release-assets/${zip_name}" ./*)
-            rm -rf "$out_dir"
-          }
-
-          # Download and bundle dependencies
-          fetch_arch_deps "aarch64_generic" "dependencies-openwrt-aarch64.zip"
-          fetch_arch_deps "x86_64" "dependencies-openwrt-x86_64.zip"
+          chmod +x scripts/fetch-dependencies.sh
+          bash scripts/fetch-dependencies.sh
 
       - name: Generate Checksums
         run: |

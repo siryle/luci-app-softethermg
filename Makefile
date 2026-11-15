@@ -5,7 +5,7 @@ PKG_VERSION:=1.0.0
 PKG_RELEASE:=1
 
 LUCI_TITLE:=LuCI support for SoftEther VPN Server Manager
-LUCI_DEPENDS:=+softether-vpnserver +curl +jsonfilter
+LUCI_DEPENDS:=+curl +jsonfilter
 LUCI_PKGARCH:=all
 
 define Package/$(PKG_NAME)/conffiles

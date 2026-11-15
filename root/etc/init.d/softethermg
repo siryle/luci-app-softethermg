@@ -13,6 +13,9 @@ find_vpnserver() {
 	elif command -v vpnserver >/dev/null 2>&1; then
 		PROG=$(command -v vpnserver)
 		return 0
+	elif [ -x "/usr/libexec/softethervpn/vpnserver" ]; then
+		PROG="/usr/libexec/softethervpn/vpnserver"
+		return 0
 	elif [ -x "/usr/libexec/softether/vpnserver" ]; then
 		PROG="/usr/libexec/softether/vpnserver"
 		return 0
