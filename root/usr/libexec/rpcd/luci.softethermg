@@ -45,9 +45,10 @@ case "$1" in
 			"set_nat": {"hub": "str", "use_nat": "bool", "use_dhcp": "bool", "ip": "str", "mask": "str", "dhcp_start": "str", "dhcp_end": "str", "dhcp_mask": "str", "gateway": "str", "dns": "str"},
 			"toggle_nat": {"hub": "str", "enable": "bool"},
 			"get_ipsec": {},
-			"set_ipsec": {"l2tp": "bool", "psk": "str", "hub": "str"},
+			"set_ipsec": {"l2tp": "bool", "psk": "str", "hub": "str", "raw_l2tp": "bool", "etherip": "bool"},
 			"get_openvpn": {},
 			"set_openvpn": {"openvpn": "bool", "ports": "str", "sstp": "bool"},
+			"make_openvpn_config": {},
 			"enum_sessions": {"hub": "str"},
 			"kill_session": {"hub": "str", "session": "str"},
 			"change_admin_password": {"password": "str"}
@@ -203,10 +204,14 @@ case "$1" in
 				l2tp=$(parse_json "$input" '@.l2tp')
 				psk=$(parse_json "$input" '@.psk')
 				hub=$(parse_json "$input" '@.hub')
+				raw_l2tp=$(parse_json "$input" '@.raw_l2tp')
+				etherip=$(parse_json "$input" '@.etherip')
 				[ -z "$l2tp" ] && l2tp="true"
 				[ -z "$psk" ] && psk="vpn"
 				[ -z "$hub" ] && hub="DEFAULT"
-				se_set_ipsec "$l2tp" "$psk" "$hub"
+				[ -z "$raw_l2tp" ] && raw_l2tp="false"
+				[ -z "$etherip" ] && etherip="false"
+				se_set_ipsec "$l2tp" "$psk" "$hub" "$raw_l2tp" "$etherip"
 				;;
 
 			get_openvpn)
@@ -222,6 +227,10 @@ case "$1" in
 				[ -z "$ports" ] && ports="1194"
 				[ -z "$sstp" ] && sstp="false"
 				se_set_openvpn "$openvpn" "$ports" "$sstp"
+				;;
+
+			make_openvpn_config)
+				se_make_openvpn_config
 				;;
 
 			enum_sessions)

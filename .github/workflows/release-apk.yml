@@ -40,9 +40,13 @@ jobs:
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
-      - name: Validate Plugin Switch
+      - name: Validate Plugin
         run: |
           python3 scripts/test-enable-switch.py
+          python3 scripts/test-protocols.py
+          node scripts/test-protocols-ui.js
+          node --check htdocs/luci-static/resources/view/softethermg/protocols.js
+          sh -n root/usr/share/softethermg/api.sh
           node --check htdocs/luci-static/resources/view/softethermg/settings.js
           node --check htdocs/luci-static/resources/view/softethermg/overview.js
           sh -n root/etc/init.d/softethermg

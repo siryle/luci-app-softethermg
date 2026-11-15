@@ -4,6 +4,8 @@
 
 本项目参照 **[openwrt-passwall](https://github.com/Openwrt-Passwall/openwrt-passwall)** 的现代架构与设计规范开发，**彻底摒弃了 Python、FastAPI、Uvicorn 和 Node.js**，直接利用 SoftEther 官方内建的 **JSON-RPC 2.0 API** 规范实现控制。
 
+功能逐步对齐 **[DrSaeedHub/Softether-Manager](https://github.com/DrSaeedHub/Softether-Manager)**，通过 LuCI、Shell 与 vpncmd/JSON-RPC 实现，适配 OpenWrt。当前已支持的功能见下文，尚未覆盖上游全部 133 个管理接口。
+
 * **极致轻量**：插件体积仅百余 KB，无常驻额外进程，零内存开销，即使在 16MB/32MB Flash 的嵌入式路由器上也能丝滑运行。
 * **原生体验**：采用纯 LuCI-JS 打造，无缝集成进 OpenWrt 官方后台管理界面。
 * **功能全面**：涵盖运行状态监控、虚拟 HUB 管理、用户与限速策略、SecureNAT (虚拟 NAT/DHCP)、L2TP/IPsec 与 OpenVPN 协议一键配置、实时会话监控与踢人。
@@ -26,9 +28,10 @@
    - 单键开启/停用 SecureNAT。
    - 可视化配置虚拟网关 IP、子网掩码、DHCP 地址池起止范围及主 DNS 服务器。
 5. **协议设置 (Protocols)**
-   - **L2TP / IPsec**：免客户端支持 iOS、Android、macOS 及 Windows 自带 VPN。
-   - **OpenVPN**：配置监听端口列表（默认 1194）。
-   - **MS-SSTP**：基于 HTTPS 443 端口的 Windows 原生 SSL-VPN。
+   - **L2TP / IPsec**：配置 L2TP over IPsec、Raw L2TP 与 EtherIP / L2TPv3 开关、预共享密钥及默认 HUB。
+   - **OpenVPN**：配置 UDP 监听端口列表（默认 1194），下载服务端生成的客户端模板 ZIP，包含 TUN/TAP `.ovpn` 文件、证书与说明。
+   - **MS-SSTP**：读取和设置 SSTP 开关，支持 vpncmd 和 JSON-RPC 两种通信方式。
+   - 保存时检查后台错误，并重新读取服务端状态确认生效。
 6. **在线会话监控 (Sessions)**
    - 实时呈现当前连接的客户端真实 IP、主机名、TCP 连接数及传输数据量。
    - 一键断开（踢出）异常会话。
@@ -140,3 +143,10 @@ luci-app-softethermg/
    - 若首次使用 SoftEther，请进入**基本设置**配置正确的管理员连接密码。
 2. **能否远程管理其他机器上的 SoftEther 服务端？**
    - 可以。在“基本设置”中将 `API 监听地址` 改为目标服务器的 IP，即可实现跨主机管理。
+3. **如何下载 OpenVPN 客户端模板？**
+   - 进入“服务 → SoftEther VPN → 协议设置”，启用 OpenVPN、填写 UDP 端口，点击“保存并应用设置”。
+   - 点击“下载 OpenVPN 模板 (.zip)”。模板由当前连接的 SoftEther 服务端生成，使用服务端证书与实际配置，兼容纯面板和托管模式。
+   - 解压后，远程接入通常使用文件名含 `remote_access_l3` 的 TUN 配置；网桥场景使用含 `site_to_site_bridge_l2` 的 TAP 配置。
+   - 导入 OpenVPN 客户端前，检查 `.ovpn` 中的 `remote` 地址及端口，并确保路由器防火墙放行对应 UDP 端口。多 HUB 用户使用 `用户名@HUB名` 登录。
+   - 需要服务器管理员权限；插件关闭、OpenVPN 未启用或服务端拒绝导出时会提示失败。
+   - 这是 OpenVPN 的 `.ovpn` 模板 ZIP，与上游用户页面下载的 SoftEther VPN Client `.vpn` 连接文件格式不同。

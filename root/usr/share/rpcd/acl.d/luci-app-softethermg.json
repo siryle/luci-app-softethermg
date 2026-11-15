@@ -31,6 +31,7 @@
 					"toggle_nat",
 					"set_ipsec",
 					"set_openvpn",
+					"make_openvpn_config",
 					"kill_session",
 					"change_admin_password"
 				]

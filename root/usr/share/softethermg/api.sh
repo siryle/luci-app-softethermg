@@ -4,6 +4,30 @@
 
 CONFIG="softethermg"
 
+json_string() {
+	printf '%s\n' "$1" | awk '
+		BEGIN {
+			for (i = 1; i < 32; i++) escapes[sprintf("%c", i)] = sprintf("\\u%04x", i)
+			printf "\""
+		}
+		{
+			if (NR > 1) printf "\\n"
+			for (i = 1; i <= length($0); i++) {
+				c = substr($0, i, 1)
+				if (c == "\\") printf "\\\\"
+				else if (c == "\"") printf "\\\""
+				else if (c in escapes) printf "%s", escapes[c]
+				else printf "%s", c
+			}
+		}
+		END { printf "\"" }
+	'
+}
+
+api_error() {
+	printf '{"jsonrpc":"2.0","error":{"code":%s,"message":%s},"id":"1"}\n' "${2:--32000}" "$(json_string "$1")"
+}
+
 get_config_value() {
 	local key="$1"
 	local default="$2"
@@ -372,62 +396,118 @@ cmd_disable_secure_nat() {
 }
 
 # --- Protocols via vpncmd ---
+vpncmd_csv_value() {
+	printf '%s\n' "$1" | awk -v pattern="$2" '
+		{
+			sub(/\r$/, "")
+			idx = index($0, ",")
+			if (!idx) next
+			key = substr($0, 1, idx - 1)
+			gsub(/^"|"$/, "", key)
+			if (tolower(key) !~ pattern) next
+			value = substr($0, idx + 1)
+			if (value ~ /^".*"$/) {
+				value = substr(value, 2, length(value) - 2)
+				gsub(/""/, "\"", value)
+			}
+			print value
+			exit
+		}
+	'
+}
+
+vpncmd_csv_bool() {
+	case "$(vpncmd_csv_value "$1" "$2")" in
+		Yes|yes|true|Enabled) echo true ;;
+		No|no|false|Disabled) echo false ;;
+		*) return 1 ;;
+	esac
+}
+
 cmd_get_ipsec() {
-	local raw
-	raw=$(run_vpncmd "" "IPsecGet")
-	local l2tp="false"
-	local psk="vpn"
-	local hub="DEFAULT"
-
-	if echo "$raw" | grep -qi "L2TP over IPsec Server Function.*Enabled"; then
-		l2tp="true"
+	local raw l2tp raw_l2tp etherip psk hub
+	if ! raw=$(run_vpncmd "" "IPsecGet") ||
+		! l2tp=$(vpncmd_csv_bool "$raw" "^l2tp over ipsec server function enabled$") ||
+		! raw_l2tp=$(vpncmd_csv_bool "$raw" "^raw l2tp server function enabled$") ||
+		! etherip=$(vpncmd_csv_bool "$raw" "^etherip / l2tpv3 over ipsec server function enabled$"); then
+		api_error "Unable to read IPsec settings. Check the server address, password and administrator permissions."
+		return 1
 	fi
-	local psk_found
-	psk_found=$(echo "$raw" | grep -i "Pre-Shared Key" | awk -F',' '{print $2}' | tr -d '\r"')
-	[ -n "$psk_found" ] && psk="$psk_found"
-
-	local hub_found
-	hub_found=$(echo "$raw" | grep -i "Default Virtual HUB" | awk -F',' '{print $2}' | tr -d '\r"')
-	[ -n "$hub_found" ] && hub="$hub_found"
-
-	echo "{\"jsonrpc\":\"2.0\",\"result\":{\"L2TP_IPsec_bool\":$l2tp,\"IPsec_Secret_str\":\"$psk\",\"L2TP_DefaultHub_str\":\"$hub\"},\"id\":\"1\"}"
+	psk=$(vpncmd_csv_value "$raw" "^ipsec pre-shared key string$")
+	hub=$(vpncmd_csv_value "$raw" "^name of default virtual hub$")
+	printf '{"jsonrpc":"2.0","result":{"L2TP_IPsec_bool":%s,"L2TP_Raw_bool":%s,"EtherIP_IPsec_bool":%s,"IPsec_Secret_str":%s,"L2TP_DefaultHub_str":%s},"id":"1"}\n' \
+		"$l2tp" "$raw_l2tp" "$etherip" "$(json_string "$psk")" "$(json_string "$hub")"
 }
 
 cmd_set_ipsec() {
-	local l2tp="${1:-true}"
-	local psk="${2:-vpn}"
-	local hub="${3:-DEFAULT}"
-	local l2tp_opt="no"
+	local l2tp="${1:-true}" psk="${2:-vpn}" hub="${3:-DEFAULT}"
+	local raw_l2tp="${4:-false}" etherip="${5:-false}"
+	local l2tp_opt="no" raw_opt="no" etherip_opt="no"
 	[ "$l2tp" = "true" ] && l2tp_opt="yes"
+	[ "$raw_l2tp" = "true" ] && raw_opt="yes"
+	[ "$etherip" = "true" ] && etherip_opt="yes"
 
-	run_vpncmd "" "IPsecEnable /L2TP:$l2tp_opt /L2TPRAW:no /ETHERIP:no /PSK:$psk /DEFAULTHUB:$hub" >/dev/null 2>&1
+	# vpncmd parses this command string itself; reject values that could add options.
+	case "$psk$hub" in
+		*[[:space:][:cntrl:]]*|*\"*|*\\*|*/*)
+			api_error "In vpncmd mode, the IPsec key and hub name cannot contain spaces, quotes, backslashes or slashes." -32602
+			return 1 ;;
+	esac
+	if ! run_vpncmd "" "IPsecEnable /L2TP:$l2tp_opt /L2TPRAW:$raw_opt /ETHERIP:$etherip_opt /PSK:$psk /DEFAULTHUB:$hub" >/dev/null; then
+		api_error "Unable to save IPsec settings. Check the server connection and administrator permissions."
+		return 1
+	fi
 	echo '{"jsonrpc":"2.0","result":{},"id":"1"}'
 }
 
 cmd_get_openvpn() {
-	local raw
-	raw=$(run_vpncmd "" "OpenVpnGet")
-	local ovpn="false"
-	local ports="1194"
-	if echo "$raw" | grep -qi "OpenVPN Function.*Enabled"; then
-		ovpn="true"
+	local raw sstp_raw ovpn sstp ports
+	if ! raw=$(run_vpncmd "" "OpenVpnGet") ||
+		! sstp_raw=$(run_vpncmd "" "SstpGet") ||
+		! ovpn=$(vpncmd_csv_bool "$raw" "^openvpn clone server enabled$") ||
+		! sstp=$(vpncmd_csv_bool "$sstp_raw" "^sstp vpn clone server enabled$"); then
+		api_error "Unable to read OpenVPN/SSTP settings. Check the server connection and vpncmd version."
+		return 1
 	fi
-	local ports_found
-	ports_found=$(echo "$raw" | grep -i "UDP Port List" | awk -F',' '{print $2}' | tr -d '\r"')
-	[ -n "$ports_found" ] && ports="$ports_found"
-
-	echo "{\"jsonrpc\":\"2.0\",\"result\":{\"EnableOpenVPN_bool\":$ovpn,\"OpenVPNPortList_str\":\"$ports\",\"EnableSSTP_bool\":false},\"id\":\"1\"}"
+	ports=$(vpncmd_csv_value "$raw" "^udp port list$")
+	printf '{"jsonrpc":"2.0","result":{"EnableOpenVPN_bool":%s,"OpenVPNPortList_str":%s,"EnableSSTP_bool":%s},"id":"1"}\n' \
+		"$ovpn" "$(json_string "$ports")" "$sstp"
 }
 
 cmd_set_openvpn() {
-	local openvpn="${1:-true}"
-	local ports="${2:-1194}"
-	local ovpn_opt="no"
+	local openvpn="${1:-true}" ports="${2:-1194}" sstp="${3:-false}"
+	local ovpn_opt="no" sstp_opt="no"
 	[ "$openvpn" = "true" ] && ovpn_opt="yes"
+	[ "$sstp" = "true" ] && sstp_opt="yes"
 
-	run_vpncmd "" "OpenVpnEnable $ovpn_opt /PORTS:$ports" >/dev/null 2>&1
+	if ! run_vpncmd "" "OpenVpnEnable $ovpn_opt /PORTS:$ports" >/dev/null ||
+		! run_vpncmd "" "SstpEnable $sstp_opt" >/dev/null; then
+		api_error "Unable to save OpenVPN/SSTP settings. Some settings may have changed; reload to check the server state."
+		return 1
+	fi
 	echo '{"jsonrpc":"2.0","result":{},"id":"1"}'
 }
+
+cmd_make_openvpn_config() (
+	umask 077
+	export_dir=$(mktemp -d /tmp/softethermg-openvpn.XXXXXX) || {
+		api_error "Unable to create a temporary directory for the OpenVPN configuration."
+		exit 1
+	}
+	trap 'rm -rf "$export_dir"' 0
+	trap 'exit 1' HUP INT TERM
+
+	if ! run_vpncmd "" "OpenVpnMakeConfig $export_dir/openvpn_config.zip" >/dev/null ||
+		[ ! -s "$export_dir/openvpn_config.zip" ]; then
+		api_error "Unable to export OpenVPN configuration. Enable OpenVPN and save its settings first; server administrator access is required."
+		exit 1
+	fi
+	encoded=$(base64 < "$export_dir/openvpn_config.zip") || {
+		api_error "Unable to encode the OpenVPN configuration archive."
+		exit 1
+	}
+	printf '{"jsonrpc":"2.0","result":{"Buffer_bin":"%s"},"id":"1"}\n' "$(printf '%s' "$encoded" | tr -d '\r\n')"
+)
 
 # --- Sessions via vpncmd ---
 cmd_enum_sessions() {
@@ -500,7 +580,8 @@ cmd_set_server_password() {
 
 rpc_call() {
 	local method="$1"
-	local params="${2:-{}}"
+	local params="${2:-}"
+	[ -n "$params" ] || params='{}'
 	local hub="${3:-}"
 
 	local host
@@ -712,15 +793,14 @@ se_get_ipsec() {
 }
 
 se_set_ipsec() {
-	local l2tp="${1:-true}"
-	local psk="${2:-vpn}"
-	local hub="${3:-DEFAULT}"
+	local l2tp="${1:-true}" psk="${2:-vpn}" hub="${3:-DEFAULT}"
+	local raw_l2tp="${4:-false}" etherip="${5:-false}"
 	if [ "$(get_api_type)" = "vpncmd" ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
-		cmd_set_ipsec "$l2tp" "$psk" "$hub"
+		cmd_set_ipsec "$l2tp" "$psk" "$hub" "$raw_l2tp" "$etherip"
 	else
 		local params
-		params=$(printf '{"L2TP_IPsec_bool":%s,"L2TP_Raw_bool":false,"EtherIP_IPsec_bool":false,"IPsec_Secret_str":"%s","L2TP_DefaultHub_str":"%s"}' \
-			"$l2tp" "$psk" "$hub")
+		params=$(printf '{"L2TP_IPsec_bool":%s,"L2TP_Raw_bool":%s,"EtherIP_IPsec_bool":%s,"IPsec_Secret_str":%s,"L2TP_DefaultHub_str":%s}' \
+			"$l2tp" "$raw_l2tp" "$etherip" "$(json_string "$psk")" "$(json_string "$hub")")
 		rpc_call "SetIPsecServices" "$params"
 	fi
 }
@@ -737,6 +817,13 @@ se_set_openvpn() {
 	local openvpn="${1:-true}"
 	local ports="${2:-1194}"
 	local sstp="${3:-false}"
+	ports=$(printf '%s' "$ports" | tr ' ' ',' | tr -s ',')
+	if ! printf '%s\n' "$ports" | awk -F, '{
+		for (i = 1; i <= NF; i++) if ($i !~ /^[0-9]+$/ || $i < 1 || $i > 65535) exit 1
+	}'; then
+		api_error "OpenVPN ports must be between 1 and 65535, separated by commas or spaces." -32602
+		return 1
+	fi
 	if [ "$(get_api_type)" = "vpncmd" ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
 		cmd_set_openvpn "$openvpn" "$ports" "$sstp"
 	else
@@ -744,6 +831,14 @@ se_set_openvpn() {
 		params=$(printf '{"EnableOpenVPN_bool":%s,"OpenVPNPortList_str":"%s","EnableSSTP_bool":%s}' \
 			"$openvpn" "$ports" "$sstp")
 		rpc_call "SetOpenVpnSstpConfig" "$params"
+	fi
+}
+
+se_make_openvpn_config() {
+	if [ "$(get_api_type)" = "vpncmd" ] && command -v "$(find_vpncmd)" >/dev/null 2>&1; then
+		cmd_make_openvpn_config
+	else
+		rpc_call "MakeOpenVpnConfigFile" "{}"
 	fi
 }
 
