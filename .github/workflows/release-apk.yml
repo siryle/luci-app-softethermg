@@ -43,6 +43,8 @@ jobs:
       - name: Validate Plugin
         run: |
           python3 scripts/test-enable-switch.py
+          python3 scripts/test-package-hooks.py
+          sh -n root/usr/share/softethermg/postinst.sh
           python3 scripts/test-protocols.py
           node scripts/test-protocols-ui.js
           if ! pkg-config --exists json-c; then

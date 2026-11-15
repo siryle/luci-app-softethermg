@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-VERSION="${1:-1.0.13}"
+VERSION="${1:-1.0.14}"
 RELEASE="1"
 PKG_NAME="luci-app-softethermg"
 DIST_DIR="${PWD}/release-assets"
@@ -34,16 +34,8 @@ if command -v docker >/dev/null 2>&1; then
 		chmod +x \"\$STAGING_DIR/usr/share/softethermg/api.sh\"
 		chmod +x \"\$STAGING_DIR/usr/libexec/rpcd/luci.softethermg\"
 
-		# Generate post-install script for LuCI registration & cache refresh
-		cat << 'EOF_POSTINST' > \"\$STAGING_DIR/post-install\"
-#!/bin/sh
-[ -s \"\${IPKG_INSTROOT}/lib/functions.sh\" ] && . \"\${IPKG_INSTROOT}/lib/functions.sh\"
-[ -x \"\${IPKG_INSTROOT}/etc/uci-defaults/luci-app-softethermg\" ] && \"\${IPKG_INSTROOT}/etc/uci-defaults/luci-app-softethermg\"
-[ -x \"/etc/init.d/rpcd\" ] && /etc/init.d/rpcd restart >/dev/null 2>&1
-rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null || true
-exit 0
-EOF_POSTINST
-		chmod 0755 \"\$STAGING_DIR/post-install\"
+		# Installation and upgrade both need to register RPC methods and refresh ACLs.
+		POSTINST=\"\$STAGING_DIR/usr/share/softethermg/postinst.sh\"
 
 		# 1. Main universal noarch package (OpenWrt standard for LuCI apps)
 		apk mkpkg \
@@ -54,7 +46,8 @@ EOF_POSTINST
 			--info description:\"LuCI support for SoftEther VPN Server Manager\" \
 			--info url:\"https://github.com/siryle/luci-app-softethermg\" \
 			--info license:GPL-3.0 \
-			--script \"post-install:\$STAGING_DIR/post-install\" \
+			--script \"post-install:\$POSTINST\" \
+			--script \"post-upgrade:\$POSTINST\" \
 			--files \"\$STAGING_DIR\" \
 			--output \"release-assets/${PKG_NAME}-${VERSION}-r${RELEASE}.apk\"
 
@@ -67,7 +60,8 @@ EOF_POSTINST
 			--info description:\"LuCI support for SoftEther VPN Server Manager (aarch64_cortex-a53)\" \
 			--info url:\"https://github.com/siryle/luci-app-softethermg\" \
 			--info license:GPL-3.0 \
-			--script \"post-install:\$STAGING_DIR/post-install\" \
+			--script \"post-install:\$POSTINST\" \
+			--script \"post-upgrade:\$POSTINST\" \
 			--files \"\$STAGING_DIR\" \
 			--output \"release-assets/${PKG_NAME}-${VERSION}-r${RELEASE}_aarch64_cortex-a53.apk\"
 
@@ -79,7 +73,8 @@ EOF_POSTINST
 			--info description:\"LuCI support for SoftEther VPN Server Manager (ARM64)\" \
 			--info url:\"https://github.com/siryle/luci-app-softethermg\" \
 			--info license:GPL-3.0 \
-			--script \"post-install:\$STAGING_DIR/post-install\" \
+			--script \"post-install:\$POSTINST\" \
+			--script \"post-upgrade:\$POSTINST\" \
 			--files \"\$STAGING_DIR\" \
 			--output \"release-assets/${PKG_NAME}-${VERSION}-r${RELEASE}_aarch64.apk\"
 
@@ -91,7 +86,8 @@ EOF_POSTINST
 			--info description:\"LuCI support for SoftEther VPN Server Manager (x86_64)\" \
 			--info url:\"https://github.com/siryle/luci-app-softethermg\" \
 			--info license:GPL-3.0 \
-			--script \"post-install:\$STAGING_DIR/post-install\" \
+			--script \"post-install:\$POSTINST\" \
+			--script \"post-upgrade:\$POSTINST\" \
 			--files \"\$STAGING_DIR\" \
 			--output \"release-assets/${PKG_NAME}-${VERSION}-r${RELEASE}_x86_64.apk\"
 
@@ -162,14 +158,7 @@ Description: LuCI support for SoftEther VPN Server Manager
 EOF_CTRL
 echo "/etc/config/softethermg" > "$IPK_DIR/control/conffiles"
 
-cat << 'EOF_POSTINST' > "$IPK_DIR/control/postinst"
-#!/bin/sh
-[ -s "${IPKG_INSTROOT}/lib/functions.sh" ] && . "${IPKG_INSTROOT}/lib/functions.sh"
-[ -x "${IPKG_INSTROOT}/etc/uci-defaults/luci-app-softethermg" ] && "${IPKG_INSTROOT}/etc/uci-defaults/luci-app-softethermg"
-[ -x "/etc/init.d/rpcd" ] && /etc/init.d/rpcd restart >/dev/null 2>&1
-rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null || true
-exit 0
-EOF_POSTINST
+cp root/usr/share/softethermg/postinst.sh "$IPK_DIR/control/postinst"
 chmod 0755 "$IPK_DIR/control/postinst"
 
 (cd "$IPK_DIR/control" && tar -czf "$IPK_DIR/control.tar.gz" ./*)

@@ -4,6 +4,9 @@
 		"order": 20,
 		"action": {
 			"type": "firstchild"
+		},
+		"depends": {
+			"acl": ["luci-app-softethermg"]
 		}
 	},
 	"admin/services/softethermg/overview": {
