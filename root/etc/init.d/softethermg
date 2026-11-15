@@ -61,18 +61,10 @@ start_service() {
 	procd_close_instance
 }
 
-stop_service() {
-	config_load "$NAME"
-	local manage_service
-	config_get_bool manage_service global manage_service 0
-
-	# 纯面板模式下停止服务不杀掉已有的 vpnserver 进程
-	if [ "$manage_service" -eq 1 ]; then
-		logger -t "$NAME" "Stopping SoftEther VPN Server daemon..."
-		if find_vpnserver; then
-			"$PROG" stop >/dev/null 2>&1 || true
-		fi
-	fi
+# 仅停止 procd 管理的实例，避免影响已有或远程 SoftEther 服务。
+reload_service() {
+	stop
+	start
 }
 
 service_triggers() {

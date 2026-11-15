@@ -18,8 +18,13 @@ return view.extend({
 		const s = m.section(form.NamedSection, 'global', 'global', _('基本运行设置'));
 		s.anonymous = true;
 
+		let o = s.option(form.Flag, 'enabled', _('启用插件'),
+			_('勾选后启用插件，修改后点击“保存并应用”生效。关闭后停止插件的后台连接与操作；托管模式下同时停止由插件启动的 VPN 服务，纯面板模式不影响已有服务。'));
+		o.default = '1';
+		o.rmempty = false;
+
 		// 运行模式：纯面板 vs 进程接管
-		let o = s.option(form.ListValue, 'manage_service', _('运行模式'),
+		o = s.option(form.ListValue, 'manage_service', _('运行模式'),
 			_('选择插件的角色。如果您系统上已经运行了 SoftEther VPN，请保持默认的“仅作为可视化管理面板”。'));
 		o.value('0', _('仅作为可视化面板 (推荐，连接已有服务)'));
 		o.value('1', _('由插件托管启动 vpnserver 进程'));
@@ -40,12 +45,6 @@ return view.extend({
 		o.default = '/usr/libexec/softethervpn/vpncmd';
 		o.depends('api_type', 'vpncmd');
 		o.rmempty = true;
-
-		// 启用服务开关
-		o = s.option(form.Flag, 'enabled', _('启用面板功能'),
-			_('是否启用本面板与后台的连接。'));
-		o.default = '1';
-		o.rmempty = false;
 
 		// API 监听主机
 		o = s.option(form.Value, 'api_host', _('服务端连接地址'),

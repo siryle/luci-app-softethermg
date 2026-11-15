@@ -55,6 +55,11 @@ case "$1" in
 		;;
 
 	call)
+		if [ "$(get_config_value enabled 1)" != "1" ]; then
+			echo '{"jsonrpc":"2.0","error":{"code":-32002,"message":"SoftEther manager is disabled. Enable it in settings and apply changes."},"id":"1"}'
+			exit 0
+		fi
+
 		case "$2" in
 			status)
 				local res

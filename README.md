@@ -33,7 +33,9 @@
    - 实时呈现当前连接的客户端真实 IP、主机名、TCP 连接数及传输数据量。
    - 一键断开（踢出）异常会话。
 7. **基本设置 (Settings)**
-   - UCI 服务开机自启、管理 API 监听主机及端口（默认 5555）。
+   - 插件启用开关：在“服务 → SoftEther VPN → 基本设置”中勾选或取消“启用插件”，点击“保存并应用”生效。
+   - 关闭插件后停止后台连接与管理操作；托管模式下同时停止由插件启动的 VPN 服务，纯面板模式不影响已有或远程服务。
+   - 管理目标地址及端口（默认 5555），支持纯面板和托管运行模式。
    - 一键修改 SoftEther 服务器主管理员密码并自动同步到配置。
 
 ---
@@ -126,7 +128,7 @@ luci-app-softethermg/
    /etc/init.d/softethermg enable
    /etc/init.d/softethermg start
    ```
-5. 刷新 OpenWrt Web 界面，导航栏顶部会出现 **`VPN` -> `SoftEther VPN`** 菜单。
+5. 刷新 OpenWrt Web 界面，在 **`服务` -> `SoftEther VPN`** 菜单中进入管理页面。
 
 ---
 

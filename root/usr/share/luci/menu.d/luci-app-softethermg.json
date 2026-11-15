@@ -61,12 +61,5 @@
 			"type": "view",
 			"path": "softethermg/settings"
 		}
-	},
-	"admin/vpn/softethermg": {
-		"title": "SoftEther VPN",
-		"action": {
-			"type": "alias",
-			"path": "admin/services/softethermg"
-		}
 	}
 }

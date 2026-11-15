@@ -36,6 +36,7 @@ return view.extend({
 		const statusRes = data[0] || {};
 		const hubsRes = data[1] || {};
 
+		const isDisabled = statusRes.error?.code === -32002;
 		const s = statusRes.result || {};
 		const hubs = hubsRes.result?.HubList || [];
 		const isRunning = (!statusRes.error && statusRes.result) || hubs.length > 0;
@@ -60,7 +61,12 @@ return view.extend({
 					E('div', { 'class': 'cbi-value' }, [
 						E('label', { 'class': 'cbi-value-title' }, _('服务进程状态')),
 						E('div', { 'class': 'cbi-value-field' }, [
-							isRunning
+							isDisabled
+								? E('span', {}, [
+									_('插件已关闭'), ' ',
+									E('a', { 'href': L.url('admin/services/softethermg/settings') }, _('前往基本设置启用'))
+								])
+								: isRunning
 								? E('span', { 'style': 'display:inline-flex; align-items:center; gap:6px; font-weight:600; color:#10b981;' }, [
 									E('span', { 'style': 'width:7px; height:7px; border-radius:50%; background:#10b981; display:inline-block;' }),
 									_('Active (运行中 / 服务在线)')
@@ -124,6 +130,7 @@ return view.extend({
 
 		// 定时轮询更新状态与流量
 		poll.add(function() {
+			if (isDisabled) return;
 			return callGetStatus().then(function(res) {
 				if (!res || !res.result) return;
 				const st = res.result;
