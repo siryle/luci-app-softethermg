@@ -81,6 +81,7 @@ jobs:
             | 文件名 | 适用平台 / 格式 | 说明 |
             | :--- | :--- | :--- |
             | **`luci-app-softethermg-*.apk`** | **OpenWrt 24.x+** (noarch 通用) | **主插件标准包** (OpenWrt 官方 noarch 规范，全架构通用) |
+            | **`luci-app-softethermg-*_aarch64_cortex-a53.apk`** | **OpenWrt 24.x+** (qualcommax/filogic) | 针对 IPQ60xx / Cortex-A53 架构定制包 |
             | **`luci-app-softethermg-*_aarch64.apk`** | **OpenWrt 24.x+** (aarch64 专用) | 针对 ARM64 软路由架构锁定的主插件包 |
             | **`luci-app-softethermg-*_x86_64.apk`** | **OpenWrt 24.x+** (x86_64 专用) | 针对 x86_64 软路由架构锁定的主插件包 |
             | **`luci-app-softethermg_*_all.ipk`** | OpenWrt 21/22/23 (OPKG 格式) | 传统固件兼容主插件包 |

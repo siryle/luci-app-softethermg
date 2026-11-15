@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-VERSION="${1:-1.0.2}"
+VERSION="${1:-1.0.3}"
 RELEASE="1"
 PKG_NAME="luci-app-softethermg"
 DIST_DIR="${PWD}/release-assets"
@@ -57,7 +57,18 @@ EOF_POSTINST
 			--files \"\$STAGING_DIR\" \
 			--output \"release-assets/${PKG_NAME}-${VERSION}-r${RELEASE}.apk\"
 
-		# 2. Arch-pinned packages for aarch64 and x86_64
+		# 2. Arch-pinned packages
+		apk mkpkg \
+			--info name:${PKG_NAME} \
+			--info version:${VERSION}-r${RELEASE} \
+			--info arch:aarch64_cortex-a53 \
+			--info description:\"LuCI support for SoftEther VPN Server Manager (aarch64_cortex-a53)\" \
+			--info url:\"https://github.com/siryle/luci-app-softethermg\" \
+			--info license:GPL-3.0 \
+			--script \"post-install:\$STAGING_DIR/post-install\" \
+			--files \"\$STAGING_DIR\" \
+			--output \"release-assets/${PKG_NAME}-${VERSION}-r${RELEASE}_aarch64_cortex-a53.apk\"
+
 		apk mkpkg \
 			--info name:${PKG_NAME} \
 			--info version:${VERSION}-r${RELEASE} \
@@ -112,6 +123,7 @@ origin = ${PKG_NAME}
 EOF_PKG
 
 	(cd "$STAGING_DIR" && tar -czf "$DIST_DIR/${PKG_NAME}-${VERSION}-r${RELEASE}.apk" ./*)
+	cp "$DIST_DIR/${PKG_NAME}-${VERSION}-r${RELEASE}.apk" "$DIST_DIR/${PKG_NAME}-${VERSION}-r${RELEASE}_aarch64_cortex-a53.apk"
 	cp "$DIST_DIR/${PKG_NAME}-${VERSION}-r${RELEASE}.apk" "$DIST_DIR/${PKG_NAME}-${VERSION}-r${RELEASE}_aarch64.apk"
 	cp "$DIST_DIR/${PKG_NAME}-${VERSION}-r${RELEASE}.apk" "$DIST_DIR/${PKG_NAME}-${VERSION}-r${RELEASE}_x86_64.apk"
 	rm -rf "$STAGING_DIR"
