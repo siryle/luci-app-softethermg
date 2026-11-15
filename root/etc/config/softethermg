@@ -1,0 +1,18 @@
+config global 'global'
+	option enabled '1'
+	option manage_service '0'
+	option api_type 'vpncmd'
+	option api_host '127.0.0.1'
+	option api_port '5555'
+	option admin_password ''
+	option default_hub 'DEFAULT'
+
+config l2tp 'l2tp'
+	option enabled '0'
+	option ipsec_secret 'vpn'
+	option default_hub 'DEFAULT'
+
+config openvpn 'openvpn'
+	option enabled '0'
+	option port_list '1194'
+	option enable_sstp '0'

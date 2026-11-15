@@ -1,0 +1,74 @@
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=90
+STOP=10
+
+NAME="softethermg"
+PROG="/usr/bin/vpnserver"
+
+find_vpnserver() {
+	if [ -x "$PROG" ]; then
+		return 0
+	elif command -v vpnserver >/dev/null 2>&1; then
+		PROG=$(command -v vpnserver)
+		return 0
+	elif [ -x "/usr/libexec/softether/vpnserver" ]; then
+		PROG="/usr/libexec/softether/vpnserver"
+		return 0
+	fi
+	return 1
+}
+
+start_service() {
+	config_load "$NAME"
+	local enabled manage_service
+	config_get_bool enabled global enabled 1
+	config_get_bool manage_service global manage_service 0
+
+	[ "$enabled" -eq 1 ] || return 0
+
+	# 若为纯面板模式（manage_service=0），不接管进程生命周期，避免与系统中已运行的 SoftEther 冲突
+	if [ "$manage_service" -eq 0 ]; then
+		logger -t "$NAME" "Running in GUI panel mode (connecting to existing SoftEther daemon)."
+		return 0
+	fi
+
+	# 检查系统中是否已有运行中的 SoftEther 实例
+	if pgrep -f "vpnserver" >/dev/null 2>&1; then
+		logger -t "$NAME" "SoftEther VPN Server is already running. Skipping process spawn."
+		return 0
+	fi
+
+	if ! find_vpnserver; then
+		logger -t "$NAME" "warning: vpnserver binary not found, but panel can still manage remote or existing instances."
+		return 1
+	fi
+
+	logger -t "$NAME" "Starting SoftEther VPN Server daemon ($PROG)..."
+	procd_open_instance
+	procd_set_param command "$PROG" execsvc
+	procd_set_param respawn 3600 5 0
+	procd_set_param file /etc/config/softethermg
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+}
+
+stop_service() {
+	config_load "$NAME"
+	local manage_service
+	config_get_bool manage_service global manage_service 0
+
+	# 纯面板模式下停止服务不杀掉已有的 vpnserver 进程
+	if [ "$manage_service" -eq 1 ]; then
+		logger -t "$NAME" "Stopping SoftEther VPN Server daemon..."
+		if find_vpnserver; then
+			"$PROG" stop >/dev/null 2>&1 || true
+		fi
+	fi
+}
+
+service_triggers() {
+	procd_add_reload_trigger "$NAME"
+}

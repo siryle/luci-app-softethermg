@@ -1,0 +1,29 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "SoftEther VPN"
+msgstr ""
+
+msgid "SoftEther VPN 服务器管理"
+msgstr ""
+
+msgid "概览状态"
+msgstr ""
+
+msgid "虚拟 HUB"
+msgstr ""
+
+msgid "用户管理"
+msgstr ""
+
+msgid "虚拟 NAT/DHCP"
+msgstr ""
+
+msgid "协议设置"
+msgstr ""
+
+msgid "在线会话"
+msgstr ""
+
+msgid "基本设置"
+msgstr ""

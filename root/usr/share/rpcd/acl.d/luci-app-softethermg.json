@@ -1,0 +1,43 @@
+{
+	"luci-app-softethermg": {
+		"description": "Grant access to SoftEther VPN Server Manager RPCD and UCI",
+		"read": {
+			"ubus": {
+				"luci.softethermg": [
+					"status",
+					"enum_hubs",
+					"get_hub_status",
+					"enum_users",
+					"get_nat",
+					"get_ipsec",
+					"get_openvpn",
+					"enum_sessions"
+				]
+			},
+			"uci": [
+				"softethermg"
+			]
+		},
+		"write": {
+			"ubus": {
+				"luci.softethermg": [
+					"create_hub",
+					"delete_hub",
+					"set_hub_online",
+					"add_user",
+					"del_user",
+					"set_user_pass",
+					"set_nat",
+					"toggle_nat",
+					"set_ipsec",
+					"set_openvpn",
+					"kill_session",
+					"change_admin_password"
+				]
+			},
+			"uci": [
+				"softethermg"
+			]
+		}
+	}
+}

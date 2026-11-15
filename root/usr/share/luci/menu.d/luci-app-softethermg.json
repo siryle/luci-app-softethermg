@@ -1,0 +1,75 @@
+{
+	"admin/vpn": {
+		"title": "VPN",
+		"order": 45,
+		"action": {
+			"type": "firstchild"
+		}
+	},
+	"admin/vpn/softethermg": {
+		"title": "SoftEther VPN",
+		"order": 10,
+		"action": {
+			"type": "firstchild"
+		},
+		"depends": {
+			"acl": [ "luci-app-softethermg" ]
+		}
+	},
+	"admin/vpn/softethermg/overview": {
+		"title": "概览状态",
+		"order": 1,
+		"action": {
+			"type": "view",
+			"path": "softethermg/overview"
+		}
+	},
+	"admin/vpn/softethermg/hubs": {
+		"title": "虚拟 HUB",
+		"order": 2,
+		"action": {
+			"type": "view",
+			"path": "softethermg/hubs"
+		}
+	},
+	"admin/vpn/softethermg/users": {
+		"title": "用户管理",
+		"order": 3,
+		"action": {
+			"type": "view",
+			"path": "softethermg/users"
+		}
+	},
+	"admin/vpn/softethermg/nat": {
+		"title": "虚拟 NAT/DHCP",
+		"order": 4,
+		"action": {
+			"type": "view",
+			"path": "softethermg/nat"
+		}
+	},
+	"admin/vpn/softethermg/protocols": {
+		"title": "协议设置",
+		"order": 5,
+		"action": {
+			"type": "view",
+			"path": "softethermg/protocols"
+		}
+	},
+	"admin/vpn/softethermg/sessions": {
+		"title": "在线会话",
+		"order": 6,
+		"action": {
+			"type": "view",
+			"path": "softethermg/sessions"
+		}
+	},
+	"admin/vpn/softethermg/settings": {
+		"title": "基本设置",
+		"order": 7,
+		"action": {
+			"type": "view",
+			"path": "softethermg/settings"
+		}
+	}
+}

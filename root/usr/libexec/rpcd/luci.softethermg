@@ -1,0 +1,243 @@
+#!/bin/sh
+# /usr/libexec/rpcd/luci.softethermg
+# RPCD bridge provider for SoftEther VPN Server Manager
+
+. /usr/share/softethermg/api.sh
+
+parse_json() {
+	local json="$1"
+	local expr="$2"
+	if command -v jsonfilter >/dev/null 2>&1; then
+		echo "$json" | jsonfilter -e "$expr"
+	else
+		# Fallback for environments without jsonfilter
+		python3 -c "import sys, json; d=json.loads(sys.argv[1]); print(eval(sys.argv[2]))" "$json" "d${expr#@}" 2>/dev/null || echo ""
+	fi
+}
+
+case "$1" in
+	list)
+		echo '{
+			"status": {},
+			"enum_hubs": {},
+			"create_hub": {"hub": "str", "password": "str", "online": "bool"},
+			"delete_hub": {"hub": "str"},
+			"set_hub_online": {"hub": "str", "online": "bool"},
+			"get_hub_status": {"hub": "str"},
+			"enum_users": {"hub": "str"},
+			"add_user": {"hub": "str", "username": "str", "password": "str", "realname": "str", "note": "str", "expire_dt": "str", "max_upload": "int", "max_download": "int", "multi_logins": "int"},
+			"del_user": {"hub": "str", "username": "str"},
+			"set_user_pass": {"hub": "str", "username": "str", "password": "str"},
+			"get_nat": {"hub": "str"},
+			"set_nat": {"hub": "str", "use_nat": "bool", "use_dhcp": "bool", "ip": "str", "mask": "str", "dhcp_start": "str", "dhcp_end": "str", "dhcp_mask": "str", "gateway": "str", "dns": "str"},
+			"toggle_nat": {"hub": "str", "enable": "bool"},
+			"get_ipsec": {},
+			"set_ipsec": {"l2tp": "bool", "psk": "str", "hub": "str"},
+			"get_openvpn": {},
+			"set_openvpn": {"openvpn": "bool", "ports": "str", "sstp": "bool"},
+			"enum_sessions": {"hub": "str"},
+			"kill_session": {"hub": "str", "session": "str"},
+			"change_admin_password": {"password": "str"}
+		}'
+		;;
+
+	call)
+		case "$2" in
+			status)
+				local res
+				res=$(se_get_server_status)
+				# 若 RPC 通信成功获取到结果，说明已连接至运行中的服务端
+				if echo "$res" | grep -q '"result"'; then
+					echo "$res"
+				else
+					# 若通信失败，进一步诊断是进程未运行还是凭据/端口错误
+					if pgrep -f "vpnserver" >/dev/null 2>&1; then
+						echo "$res"
+					else
+						echo '{"jsonrpc":"2.0","error":{"code":-32001,"message":"vpnserver process is not running or API unreachable"},"id":"1"}'
+					fi
+				fi
+				;;
+
+			enum_hubs)
+				se_enum_hubs
+				;;
+
+			create_hub)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				pass=$(parse_json "$input" '@.password')
+				online=$(parse_json "$input" '@.online')
+				[ -z "$online" ] && online="true"
+				se_create_hub "$hub" "$pass" "$online"
+				;;
+
+			delete_hub)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				se_delete_hub "$hub"
+				;;
+
+			set_hub_online)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				online=$(parse_json "$input" '@.online')
+				se_set_hub_online "$hub" "$online"
+				;;
+
+			get_hub_status)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				[ -z "$hub" ] && hub="DEFAULT"
+				se_get_hub_status "$hub"
+				;;
+
+			enum_users)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				[ -z "$hub" ] && hub="DEFAULT"
+				se_enum_users "$hub"
+				;;
+
+			add_user)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				user=$(parse_json "$input" '@.username')
+				pass=$(parse_json "$input" '@.password')
+				realname=$(parse_json "$input" '@.realname')
+				note=$(parse_json "$input" '@.note')
+				expire_dt=$(parse_json "$input" '@.expire_dt')
+				max_up=$(parse_json "$input" '@.max_upload')
+				max_down=$(parse_json "$input" '@.max_download')
+				multi=$(parse_json "$input" '@.multi_logins')
+
+				[ -z "$hub" ] && hub="DEFAULT"
+				[ -z "$expire_dt" ] && expire_dt="1970-01-01T00:00:00.000"
+				[ -z "$max_up" ] && max_up=0
+				[ -z "$max_down" ] && max_down=0
+				[ -z "$multi" ] && multi=0
+
+				se_create_user "$hub" "$user" "$pass" "$realname" "$note" "$expire_dt" "$max_up" "$max_down" "$multi"
+				;;
+
+			del_user)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				user=$(parse_json "$input" '@.username')
+				[ -z "$hub" ] && hub="DEFAULT"
+				se_delete_user "$hub" "$user"
+				;;
+
+			set_user_pass)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				user=$(parse_json "$input" '@.username')
+				pass=$(parse_json "$input" '@.password')
+				[ -z "$hub" ] && hub="DEFAULT"
+				se_set_user_password "$hub" "$user" "$pass"
+				;;
+
+			get_nat)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				[ -z "$hub" ] && hub="DEFAULT"
+				se_get_secure_nat "$hub"
+				;;
+
+			set_nat)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				use_nat=$(parse_json "$input" '@.use_nat')
+				use_dhcp=$(parse_json "$input" '@.use_dhcp')
+				ip=$(parse_json "$input" '@.ip')
+				mask=$(parse_json "$input" '@.mask')
+				dhcp_start=$(parse_json "$input" '@.dhcp_start')
+				dhcp_end=$(parse_json "$input" '@.dhcp_end')
+				dhcp_mask=$(parse_json "$input" '@.dhcp_mask')
+				gateway=$(parse_json "$input" '@.gateway')
+				dns=$(parse_json "$input" '@.dns')
+
+				[ -z "$hub" ] && hub="DEFAULT"
+				[ -z "$use_nat" ] && use_nat="true"
+				[ -z "$use_dhcp" ] && use_dhcp="true"
+
+				se_set_secure_nat "$hub" "$use_nat" "$use_dhcp" "$ip" "$mask" "$dhcp_start" "$dhcp_end" "$dhcp_mask" "$gateway" "$dns"
+				;;
+
+			toggle_nat)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				enable=$(parse_json "$input" '@.enable')
+				[ -z "$hub" ] && hub="DEFAULT"
+				if [ "$enable" = "true" ] || [ "$enable" = "1" ]; then
+					se_enable_secure_nat "$hub"
+				else
+					se_disable_secure_nat "$hub"
+				fi
+				;;
+
+			get_ipsec)
+				se_get_ipsec
+				;;
+
+			set_ipsec)
+				read -r input
+				l2tp=$(parse_json "$input" '@.l2tp')
+				psk=$(parse_json "$input" '@.psk')
+				hub=$(parse_json "$input" '@.hub')
+				[ -z "$l2tp" ] && l2tp="true"
+				[ -z "$psk" ] && psk="vpn"
+				[ -z "$hub" ] && hub="DEFAULT"
+				se_set_ipsec "$l2tp" "$psk" "$hub"
+				;;
+
+			get_openvpn)
+				se_get_openvpn
+				;;
+
+			set_openvpn)
+				read -r input
+				openvpn=$(parse_json "$input" '@.openvpn')
+				ports=$(parse_json "$input" '@.ports')
+				sstp=$(parse_json "$input" '@.sstp')
+				[ -z "$openvpn" ] && openvpn="true"
+				[ -z "$ports" ] && ports="1194"
+				[ -z "$sstp" ] && sstp="false"
+				se_set_openvpn "$openvpn" "$ports" "$sstp"
+				;;
+
+			enum_sessions)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				[ -z "$hub" ] && hub="DEFAULT"
+				se_enum_sessions "$hub"
+				;;
+
+			kill_session)
+				read -r input
+				hub=$(parse_json "$input" '@.hub')
+				session=$(parse_json "$input" '@.session')
+				[ -z "$hub" ] && hub="DEFAULT"
+				se_delete_session "$hub" "$session"
+				;;
+
+			change_admin_password)
+				read -r input
+				password=$(parse_json "$input" '@.password')
+				if [ -n "$password" ]; then
+					res=$(se_set_server_password "$password")
+					# Update in UCI so local management doesn't lose access
+					uci set softethermg.global.admin_password="$password"
+					uci commit softethermg
+					echo "$res"
+				else
+					echo '{"jsonrpc":"2.0","error":{"code":-32602,"message":"Password cannot be empty"},"id":"1"}'
+				fi
+				;;
+
+			*)
+				echo '{"jsonrpc":"2.0","error":{"code":-32601,"message":"Method not found"},"id":"1"}'
+				;;
+		esac
+		;;
+esac
